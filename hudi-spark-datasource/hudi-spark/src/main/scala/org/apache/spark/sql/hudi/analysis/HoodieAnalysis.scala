@@ -20,7 +20,6 @@ package org.apache.spark.sql.hudi.analysis
 import org.apache.hudi.DataSourceWriteOptions.MOR_TABLE_TYPE_OPT_VAL
 import org.apache.hudi.common.model.HoodieRecord
 import org.apache.hudi.common.util.ReflectionUtils
-import org.apache.hudi.common.util.ReflectionUtils.loadClass
 import org.apache.hudi.{DataSourceReadOptions, HoodieSparkUtils, SparkAdapterSupport}
 import org.apache.spark.sql.catalyst.analysis.{UnresolvedAttribute, UnresolvedRelation, UnresolvedStar}
 import org.apache.spark.sql.catalyst.catalog.{CatalogUtils, HoodieCatalogTable}
@@ -55,18 +54,18 @@ object HoodieAnalysis {
     if (HoodieSparkUtils.gteqSpark3_2) {
       val dataSourceV2ToV1FallbackClass = "org.apache.spark.sql.hudi.analysis.HoodieDataSourceV2ToV1Fallback"
       val dataSourceV2ToV1Fallback: RuleBuilder =
-        session => instantiateKlass(dataSourceV2ToV1FallbackClass, session)
+        session => ReflectionUtils.loadClass(dataSourceV2ToV1FallbackClass, session).asInstanceOf[Rule[LogicalPlan]]
 
       val spark3AnalysisClass = "org.apache.spark.sql.hudi.analysis.HoodieSpark3Analysis"
       val spark3Analysis: RuleBuilder =
-        session => instantiateKlass(spark3AnalysisClass, session)
+        session => ReflectionUtils.loadClass(spark3AnalysisClass, session).asInstanceOf[Rule[LogicalPlan]]
 
       val resolveAlterTableCommandsClass =
         if (HoodieSparkUtils.gteqSpark3_3)
           "org.apache.spark.sql.hudi.Spark33ResolveHudiAlterTableCommand"
         else "org.apache.spark.sql.hudi.Spark32ResolveHudiAlterTableCommand"
       val resolveAlterTableCommands: RuleBuilder =
-        session => instantiateKlass(resolveAlterTableCommandsClass, session)
+        session => ReflectionUtils.loadClass(resolveAlterTableCommandsClass, session).asInstanceOf[Rule[LogicalPlan]]
 
       // NOTE: PLEASE READ CAREFULLY
       //
@@ -77,7 +76,7 @@ object HoodieAnalysis {
     } else if (HoodieSparkUtils.gteqSpark3_1) {
       val spark31ResolveAlterTableCommandsClass = "org.apache.spark.sql.hudi.Spark31ResolveHudiAlterTableCommand"
       val spark31ResolveAlterTableCommands: RuleBuilder =
-        session => instantiateKlass(spark31ResolveAlterTableCommandsClass, session)
+        session => ReflectionUtils.loadClass(spark31ResolveAlterTableCommandsClass, session).asInstanceOf[Rule[LogicalPlan]]
 
       rules ++= Seq(spark31ResolveAlterTableCommands)
     }
@@ -94,7 +93,7 @@ object HoodieAnalysis {
     if (HoodieSparkUtils.gteqSpark3_2) {
       val spark3PostHocResolutionClass = "org.apache.spark.sql.hudi.analysis.HoodieSpark3PostAnalysisRule"
       val spark3PostHocResolution: RuleBuilder =
-        session => instantiateKlass(spark3PostHocResolutionClass, session)
+        session => ReflectionUtils.loadClass(spark3PostHocResolutionClass, session).asInstanceOf[Rule[LogicalPlan]]
 
       rules += spark3PostHocResolution
     }
@@ -115,7 +114,7 @@ object HoodieAnalysis {
           "org.apache.spark.sql.execution.datasources.Spark31NestedSchemaPruning"
         }
 
-      val nestedSchemaPruningRule = instantiateKlass(nestedSchemaPruningClass)
+      val nestedSchemaPruningRule = ReflectionUtils.loadClass(nestedSchemaPruningClass).asInstanceOf[Rule[LogicalPlan]]
       // TODO(HUDI-5443) re-enable
       //optimizerRules += (_ => nestedSchemaPruningRule)
     }
@@ -138,16 +137,6 @@ object HoodieAnalysis {
   // CBO is only supported in Spark >= 3.1.x
   def customPreCBORules: Seq[RuleBuilder] = Seq()
   */
-  private def instantiateKlass(klass: String): Rule[LogicalPlan] = {
-    loadClass(klass).asInstanceOf[Rule[LogicalPlan]]
-  }
-
-  private def instantiateKlass(klass: String, session: SparkSession): Rule[LogicalPlan] = {
-    // NOTE: We have to cast session to [[SparkSession]] sp that reflection lookup can
-    //       find appropriate constructor in the target class
-    loadClass(klass, Array(classOf[SparkSession]).asInstanceOf[Array[Class[_]]], session)
-      .asInstanceOf[Rule[LogicalPlan]]
-  }
 }
 
 /**

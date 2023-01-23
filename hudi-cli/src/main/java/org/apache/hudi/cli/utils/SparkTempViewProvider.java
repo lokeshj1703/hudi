@@ -18,7 +18,6 @@
 
 package org.apache.hudi.cli.utils;
 
-import org.apache.hudi.common.util.Option;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -44,8 +43,8 @@ public class SparkTempViewProvider implements TempViewProvider {
 
   public SparkTempViewProvider(String appName) {
     try {
-      SparkConf sparkConf = SparkUtil.getDefaultConf(appName, Option.of("local[8]"));
-
+      SparkConf sparkConf = new SparkConf().setAppName(appName)
+              .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").setMaster("local[8]");
       jsc = new JavaSparkContext(sparkConf);
       sqlContext = new SQLContext(jsc);
     } catch (Throwable ex) {

@@ -130,13 +130,6 @@
             <artifactId>hudi-flink</artifactId>
             <version>${project.version}</version>
         </dependency>
-
-        <!-- Kryo -->
-        <dependency>
-            <groupId>com.esotericsoftware</groupId>
-            <artifactId>kryo-shaded</artifactId>
-        </dependency>
-
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-core</artifactId>

@@ -42,10 +42,7 @@ class TestStreamingSource extends StreamTest {
   org.apache.log4j.Logger.getRootLogger.setLevel(Level.WARN)
 
   override protected def sparkConf = {
-    super.sparkConf
-      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-      .set("spark.kryo.registrator", "org.apache.spark.HoodieSparkKryoRegistrar")
-      .set("spark.sql.extensions", "org.apache.spark.sql.hudi.HoodieSparkSessionExtension")
+    super.sparkConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
   }
 
   test("test cow stream source") {

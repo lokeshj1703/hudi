@@ -121,12 +121,6 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Kryo -->
-        <dependency>
-            <groupId>com.esotericsoftware</groupId>
-            <artifactId>kryo-shaded</artifactId>
-        </dependency>
-
         <dependency>
             <groupId>org.apache.hudi</groupId>
             <artifactId>hudi-client-common</artifactId>

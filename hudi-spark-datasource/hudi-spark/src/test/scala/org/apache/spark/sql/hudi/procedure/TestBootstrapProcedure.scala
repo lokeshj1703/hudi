@@ -51,6 +51,7 @@ class TestBootstrapProcedure extends HoodieSparkProcedureTestBase {
       }
 
       spark.sql("set hoodie.bootstrap.parallelism = 20")
+      // run bootstrap
       checkAnswer(
         s"""call run_bootstrap(
            |table => '$tableName',
@@ -80,7 +81,7 @@ class TestBootstrapProcedure extends HoodieSparkProcedureTestBase {
       // show bootstrap's index mapping
       result = spark.sql(
         s"""call show_bootstrap_mapping(table => '$tableName')""".stripMargin).collect()
-      assertResult(10) {
+      assertResult(3) {
         result.length
       }
     }
