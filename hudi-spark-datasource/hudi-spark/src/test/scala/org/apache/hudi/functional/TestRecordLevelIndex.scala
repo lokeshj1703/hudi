@@ -227,7 +227,7 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
     if (tableType == HoodieTableType.MERGE_ON_READ) {
       hudiOpts = hudiOpts ++ Map(
         HoodieCompactionConfig.INLINE_COMPACT.key() -> "true",
-        HoodieCompactionConfig.INLINE_COMPACT_NUM_DELTA_COMMITS.key() -> "1"
+        HoodieCompactionConfig.INLINE_COMPACT_NUM_DELTA_COMMITS.key() -> "2"
       )
     }
 
@@ -250,6 +250,8 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
     assertTrue(metaClient.getActiveTimeline.getCleanerTimeline.lastInstant().get().getTimestamp
       .compareTo(lastCleanInstant.get().getTimestamp) > 0)
 
+    assertEquals(ActionType.clean.name(), metaClient.getActiveTimeline.lastInstant().get().getAction)
+    // Rolling back a clean instant in DT
     rollbackLastInstant(hudiOpts)
     validateDataAndRecordIndices(hudiOpts)
   }
@@ -316,6 +318,9 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
       saveMode = SaveMode.Append)
 
     assertTrue(getLatestClusteringInstant().get().getTimestamp.compareTo(lastClusteringInstant.get().getTimestamp) > 0)
+    assertEquals(getLatestClusteringInstant(), metaClient.getActiveTimeline.lastInstant())
+    // We are validating rollback of a DT clustering instant here
+    rollbackLastInstant(hudiOpts)
     validateDataAndRecordIndices(hudiOpts)
   }
 
@@ -440,7 +445,8 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
   }
 
   private def rollbackLastInstant(hudiOpts: Map[String, String]): Unit = {
-    if (getLatestCompactionInstant() != metaClient.getCommitsAndCompactionTimeline.lastInstant()) {
+    if (getLatestCompactionInstant() != metaClient.getCommitsAndCompactionTimeline.lastInstant()
+      && getLatestClusteringInstant() != metaClient.getActiveTimeline.lastInstant()) {
       mergedDfList = mergedDfList.take(mergedDfList.size - 1)
     }
     val writeConfig = getWriteConfig(hudiOpts)
@@ -448,6 +454,7 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
       val lastInstant = getHoodieTable(metaClient, writeConfig).getCompletedCommitsTimeline.lastInstant()
       client.rollback(lastInstant.get().getTimestamp)
     }
+    assertEquals(ActionType.rollback.name(), getMetadataMetaClient(hudiOpts).getActiveTimeline.lastInstant().get().getAction)
   }
 
   private def deleteLastCompletedCommitFromDataAndMetadataTimeline(hudiOpts: Map[String, String]): Unit = {
@@ -465,6 +472,10 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
     val lastInstant = getHoodieTable(metaClient, writeConfig).getCompletedCommitsTimeline.lastInstant().get()
     assertTrue(fs.delete(new Path(metaClient.getMetaPath, lastInstant.getFileName), false))
     mergedDfList = mergedDfList.take(mergedDfList.size - 1)
+  }
+
+  private def getMetadataMetaClient(hudiOpts: Map[String, String]): HoodieTableMetaClient = {
+    getHoodieTable(metaClient, getWriteConfig(hudiOpts)).getMetadataTable.asInstanceOf[HoodieBackedTableMetadata].getMetadataMetaClient
   }
 
   private def getLatestCompactionInstant(): org.apache.hudi.common.util.Option[HoodieInstant] = {
