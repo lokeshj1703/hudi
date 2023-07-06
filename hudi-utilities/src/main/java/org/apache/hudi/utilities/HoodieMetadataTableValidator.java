@@ -24,6 +24,7 @@ import org.apache.hudi.client.common.HoodieSparkEngineContext;
 import org.apache.hudi.common.bloom.BloomFilter;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.config.TypedProperties;
+import org.apache.hudi.common.data.HoodiePairData;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.BaseFile;
@@ -36,6 +37,7 @@ import org.apache.hudi.common.model.HoodieFileGroup;
 import org.apache.hudi.common.model.HoodieLogFile;
 import org.apache.hudi.common.model.HoodiePartitionMetadata;
 import org.apache.hudi.common.model.HoodieRecord.HoodieRecordType;
+import org.apache.hudi.common.model.HoodieRecordGlobalLocation;
 import org.apache.hudi.common.model.HoodieWriteStat;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.TableSchemaResolver;
@@ -50,14 +52,21 @@ import org.apache.hudi.common.util.FileIOUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.ParquetUtils;
 import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.data.HoodieJavaPairRDD;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.exception.HoodieValidationException;
 import org.apache.hudi.exception.TableNotFoundException;
+import org.apache.hudi.index.SparkMetadataTableRecordIndex;
 import org.apache.hudi.io.storage.HoodieFileReader;
 import org.apache.hudi.io.storage.HoodieFileReaderFactory;
+import org.apache.hudi.metadata.HoodieBackedTableMetadata;
 import org.apache.hudi.metadata.HoodieTableMetadata;
 import org.apache.hudi.metadata.HoodieTableMetadataUtil;
+import org.apache.hudi.metadata.MetadataPartitionType;
+import org.apache.hudi.table.HoodieSparkTable;
+import org.apache.hudi.table.HoodieTable;
 import org.apache.hudi.utilities.util.BloomFilterData;
 
 import com.beust.jcommander.JCommander;
@@ -68,7 +77,13 @@ import org.apache.hadoop.fs.Path;
 import org.apache.parquet.avro.AvroSchemaConverter;
 import org.apache.parquet.schema.MessageType;
 import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.MapFunction;
+import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Encoders;
+import org.apache.spark.sql.Row;
+import org.apache.spark.sql.SparkSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -88,6 +103,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
+
+import scala.reflect.ClassTag;
 
 import static org.apache.hudi.common.table.log.block.HoodieLogBlock.HeaderMetadataType.INSTANT_TIME;
 import static org.apache.hudi.common.table.timeline.HoodieTimeline.LESSER_THAN_OR_EQUALS;
@@ -739,6 +756,27 @@ public class HoodieMetadataTableValidator implements Serializable {
         .getSortedBloomFilterList(partitionPath, latestBaseFilenameList);
 
     validate(metadataBasedBloomFilters, fsBasedBloomFilters, partitionPath, "bloom filters");
+  }
+
+  private void validateRecordIndex(
+      HoodieMetadataValidationContext metadataTableBasedContext,
+      HoodieMetadataValidationContext fsBasedContext,
+      String partitionPath,
+      Set<String> baseDataFilesForCleaning) {
+    SparkSession spark = SparkSession.active();
+    Dataset<Row> df = spark.read().format("hudi").load(metadataTableBasedContext.metaClient.getBasePathV2().toString());
+    Dataset<String> recordKeys = df.select("_hoodie_record_key").map((MapFunction<Row, String>) value -> value.getString(0), Encoders.STRING());
+    HoodieBackedTableMetadata tableMetadata = ((HoodieBackedTableMetadata)metadataTableBasedContext.tableMetadata);
+    int numFileGroups = tableMetadata.getNumFileGroupsForPartition(MetadataPartitionType.RECORD_INDEX);
+    JavaRDD<String> partitionedKeyRDD = JavaRDD.fromRDD(recordKeys.rdd(), ClassTag.apply(String.class)).keyBy(k -> HoodieTableMetadataUtil.mapRecordKeyToFileGroupIndex(k, numFileGroups))
+        .partitionBy(new SparkMetadataTableRecordIndex.PartitionIdPassthrough(numFileGroups))
+        .map(t -> t._2);
+    HoodieTable hoodieTable = HoodieSparkTable.create(
+        HoodieWriteConfig.newBuilder().withProps(metaClient.getTableConfig().getProps()).build(),
+        new HoodieSparkEngineContext(jsc), metaClient);
+    HoodiePairData<String, HoodieRecordGlobalLocation> keyAndExistingLocations =
+        HoodieJavaPairRDD.of(partitionedKeyRDD.mapPartitionsToPair(new SparkMetadataTableRecordIndex.RecordIndexFileGroupLookupFunction(hoodieTable)));
+    df.select("_hoodie_record_key", "_hoodie_file_name").join(keyAndExistingLocations, )
   }
 
   private List<String> getLatestBaseFileNames(HoodieMetadataValidationContext fsBasedContext, String partitionPath, Set<String> baseDataFilesForCleaning) {

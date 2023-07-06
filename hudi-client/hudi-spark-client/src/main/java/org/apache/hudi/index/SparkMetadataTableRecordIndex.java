@@ -154,7 +154,7 @@ public class SparkMetadataTableRecordIndex extends HoodieIndex<Object, Object> {
   /**
    * Function that lookups a list of keys in a single shard of the record index
    */
-  private static class RecordIndexFileGroupLookupFunction implements PairFlatMapFunction<Iterator<String>, String, HoodieRecordGlobalLocation> {
+  public static class RecordIndexFileGroupLookupFunction implements PairFlatMapFunction<Iterator<String>, String, HoodieRecordGlobalLocation> {
     private final HoodieTable hoodieTable;
 
     public RecordIndexFileGroupLookupFunction(HoodieTable hoodieTable) {
@@ -180,7 +180,7 @@ public class SparkMetadataTableRecordIndex extends HoodieIndex<Object, Object> {
    * NOTE: This is a workaround for SPARK-39391, which moved the PartitionIdPassthrough from
    * {@link org.apache.spark.sql.execution.ShuffledRowRDD} to {@link Partitioner}.
    */
-  private class PartitionIdPassthrough extends Partitioner {
+  public static class PartitionIdPassthrough extends Partitioner {
 
     private final int numPartitions;
 
