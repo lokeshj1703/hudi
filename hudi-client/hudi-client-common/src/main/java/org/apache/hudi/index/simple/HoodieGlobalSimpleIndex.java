@@ -77,7 +77,7 @@ public class HoodieGlobalSimpleIndex extends HoodieSimpleIndex {
         mayContainDuplicateLookup, shouldUpdatePartitionPath, config, hoodieTable);
   }
 
-  private HoodiePairData<String, HoodieRecordGlobalLocation> fetchRecordGlobalLocations(
+  public HoodiePairData<String, HoodieRecordGlobalLocation> fetchRecordGlobalLocations(
       HoodieEngineContext context, HoodieTable hoodieTable, int parallelism,
       List<Pair<String, HoodieBaseFile>> baseFiles) {
     int fetchParallelism = Math.max(1, Math.min(baseFiles.size(), parallelism));
@@ -91,7 +91,7 @@ public class HoodieGlobalSimpleIndex extends HoodieSimpleIndex {
   /**
    * Load all files for all partitions as <Partition, filename> pair data.
    */
-  private List<Pair<String, HoodieBaseFile>> getAllBaseFilesInTable(
+  public List<Pair<String, HoodieBaseFile>> getAllBaseFilesInTable(
       final HoodieEngineContext context, final HoodieTable hoodieTable) {
     HoodieTableMetaClient metaClient = hoodieTable.getMetaClient();
     List<String> allPartitionPaths = FSUtils.getAllPartitionPaths(context, config.getMetadataConfig(), metaClient.getBasePath());

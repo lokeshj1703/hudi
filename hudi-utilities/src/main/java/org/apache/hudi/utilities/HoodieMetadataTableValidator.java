@@ -52,13 +52,17 @@ import org.apache.hudi.common.util.FileIOUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.ParquetUtils;
 import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.config.HoodieIndexConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.data.HoodieJavaPairRDD;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.exception.HoodieValidationException;
 import org.apache.hudi.exception.TableNotFoundException;
+import org.apache.hudi.index.HoodieIndex;
+import org.apache.hudi.index.SparkHoodieIndexFactory;
 import org.apache.hudi.index.SparkMetadataTableRecordIndex;
+import org.apache.hudi.index.simple.HoodieGlobalSimpleIndex;
 import org.apache.hudi.io.storage.HoodieFileReader;
 import org.apache.hudi.io.storage.HoodieFileReaderFactory;
 import org.apache.hudi.metadata.HoodieBackedTableMetadata;
@@ -102,6 +106,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import scala.reflect.ClassTag;
@@ -252,6 +257,9 @@ public class HoodieMetadataTableValidator implements Serializable {
     @Parameter(names = {"--validate-bloom-filters"}, description = "Validate bloom filters of base files", required = false)
     public boolean validateBloomFilters = false;
 
+    @Parameter(names = {"--validate-record-index"}, description = "Validate bloom filters of base files", required = false)
+    public boolean validateRecordIndex = false;
+
     @Parameter(names = {"--min-validate-interval-seconds"},
         description = "the min validate interval of each validate when set --continuous, default is 10 minutes.")
     public Integer minValidateIntervalSeconds = 10 * 60;
@@ -293,6 +301,7 @@ public class HoodieMetadataTableValidator implements Serializable {
           + "   --validate-all-file-groups " + validateAllFileGroups + ", \n"
           + "   --validate-all-column-stats " + validateAllColumnStats + ", \n"
           + "   --validate-bloom-filters " + validateBloomFilters + ", \n"
+          + "   --validate-record-index " + validateRecordIndex + ", \n"
           + "   --continuous " + continuous + ", \n"
           + "   --skip-data-files-for-cleaning " + skipDataFilesForCleaning + ", \n"
           + "   --ignore-failed " + ignoreFailed + ", \n"
@@ -323,6 +332,7 @@ public class HoodieMetadataTableValidator implements Serializable {
           && Objects.equals(validateAllFileGroups, config.validateAllFileGroups)
           && Objects.equals(validateAllColumnStats, config.validateAllColumnStats)
           && Objects.equals(validateBloomFilters, config.validateBloomFilters)
+          && Objects.equals(validateRecordIndex, config.validateRecordIndex)
           && Objects.equals(minValidateIntervalSeconds, config.minValidateIntervalSeconds)
           && Objects.equals(parallelism, config.parallelism)
           && Objects.equals(ignoreFailed, config.ignoreFailed)
@@ -336,7 +346,7 @@ public class HoodieMetadataTableValidator implements Serializable {
     @Override
     public int hashCode() {
       return Objects.hash(basePath, continuous, skipDataFilesForCleaning, validateLatestFileSlices, validateLatestBaseFiles,
-          validateAllFileGroups, validateAllColumnStats, validateBloomFilters, minValidateIntervalSeconds,
+          validateAllFileGroups, validateAllColumnStats, validateBloomFilters, validateRecordIndex, minValidateIntervalSeconds,
           parallelism, ignoreFailed, sparkMaster, sparkMemory, assumeDatePartitioning, propsFilePath, configs, help);
     }
   }
@@ -476,6 +486,10 @@ public class HoodieMetadataTableValidator implements Serializable {
           return Pair.of(false, e.getMessage() + " for partition: " + partitionPath);
         }
       }).collectAsList();
+
+      if (cfg.validateRecordIndex) {
+        validateRecordIndex(metadataTableBasedContext);
+      }
 
       for (Pair<Boolean, String> res : result) {
         finalResult &= res.getKey();
@@ -758,12 +772,9 @@ public class HoodieMetadataTableValidator implements Serializable {
     validate(metadataBasedBloomFilters, fsBasedBloomFilters, partitionPath, "bloom filters");
   }
 
-  private void validateRecordIndex(
-      HoodieMetadataValidationContext metadataTableBasedContext,
-      HoodieMetadataValidationContext fsBasedContext,
-      String partitionPath,
-      Set<String> baseDataFilesForCleaning) {
-    SparkSession spark = SparkSession.active();
+  public void validateRecordIndex(HoodieMetadataValidationContext metadataTableBasedContext) {
+    SparkSession spark = SparkSession.builder().getOrCreate();
+    LOG.info("Started Record Level Index validation");
     Dataset<Row> df = spark.read().format("hudi").load(metadataTableBasedContext.metaClient.getBasePathV2().toString());
     Dataset<String> recordKeys = df.select("_hoodie_record_key").map((MapFunction<Row, String>) value -> value.getString(0), Encoders.STRING());
     HoodieBackedTableMetadata tableMetadata = ((HoodieBackedTableMetadata)metadataTableBasedContext.tableMetadata);
@@ -771,12 +782,53 @@ public class HoodieMetadataTableValidator implements Serializable {
     JavaRDD<String> partitionedKeyRDD = JavaRDD.fromRDD(recordKeys.rdd(), ClassTag.apply(String.class)).keyBy(k -> HoodieTableMetadataUtil.mapRecordKeyToFileGroupIndex(k, numFileGroups))
         .partitionBy(new SparkMetadataTableRecordIndex.PartitionIdPassthrough(numFileGroups))
         .map(t -> t._2);
-    HoodieTable hoodieTable = HoodieSparkTable.create(
-        HoodieWriteConfig.newBuilder().withProps(metaClient.getTableConfig().getProps()).build(),
-        new HoodieSparkEngineContext(jsc), metaClient);
+    HoodieWriteConfig config = HoodieWriteConfig.newBuilder()
+        .withProps(metaClient.getTableConfig().getProps())
+        .withPath(metadataTableBasedContext.metaClient.getBasePathV2().toString())
+        .build();
+    HoodieTable hoodieTable = HoodieSparkTable.create(config, new HoodieSparkEngineContext(jsc), metaClient);
     HoodiePairData<String, HoodieRecordGlobalLocation> keyAndExistingLocations =
         HoodieJavaPairRDD.of(partitionedKeyRDD.mapPartitionsToPair(new SparkMetadataTableRecordIndex.RecordIndexFileGroupLookupFunction(hoodieTable)));
-    df.select("_hoodie_record_key", "_hoodie_file_name").join(keyAndExistingLocations, )
+
+    HoodieWriteConfig globalSimpleConfig = HoodieWriteConfig.newBuilder().withProps(config.getProps()).build();
+    globalSimpleConfig.setValue(HoodieIndexConfig.INDEX_TYPE, HoodieIndex.IndexType.GLOBAL_SIMPLE.name());
+    HoodieGlobalSimpleIndex globalSimpleIndex = (HoodieGlobalSimpleIndex) SparkHoodieIndexFactory.createIndex(globalSimpleConfig);
+    List<Pair<String, HoodieBaseFile>> latestBaseFiles = globalSimpleIndex.getAllBaseFilesInTable(hoodieTable.getContext(), hoodieTable);
+    HoodiePairData<String, HoodieRecordGlobalLocation> allKeysAndLocations =
+        globalSimpleIndex.fetchRecordGlobalLocations(hoodieTable.getContext(), hoodieTable, globalSimpleConfig.getGlobalSimpleIndexParallelism(), latestBaseFiles);
+    AtomicInteger nonExistingRLIKeys = new AtomicInteger();
+    AtomicInteger nonMatchingKeys = new AtomicInteger();
+    long matchingKeys = allKeysAndLocations.leftOuterJoin(keyAndExistingLocations).values().filter(p -> {
+      if (!p.getRight().isPresent()) {
+        nonExistingRLIKeys.getAndIncrement();
+        LOG.error("RLI location does not exist for GSI location {}", p.getLeft());
+        return false;
+      } else if (!matchRecordGlobalLocation(p.getLeft(), p.getRight().get())) {
+        LOG.error("Location does not match GSI {} RLI {}", p.getLeft(), p.getRight().get());
+        nonMatchingKeys.getAndIncrement();
+        return false;
+      }
+      return true;
+    }).count();
+    if (nonExistingRLIKeys.get() > 0 || nonMatchingKeys.get() > 0) {
+      LOG.error("Validation failed nonExistingRLIKeys {} nonMatchingKeys {} matching {}", nonExistingRLIKeys, nonMatchingKeys, matchingKeys);
+      throw new RuntimeException("Asdsakjdnbsakj");
+    }
+    long gsiCount = allKeysAndLocations.count();
+    long rliCount = keyAndExistingLocations.count();
+    if (gsiCount != keyAndExistingLocations.count()) {
+      LOG.error("Count mismatch between RLI {} and GSI {}", rliCount, gsiCount);
+    } else {
+      LOG.info("Record level index validation succeeded");
+    }
+  }
+
+  private boolean matchRecordGlobalLocation(HoodieRecordGlobalLocation left, HoodieRecordGlobalLocation right) {
+    if (!left.getPartitionPath().equals(right.getPartitionPath())) {
+      return false;
+    } else {
+      return left.getFileId().equals(right.getFileId());
+    }
   }
 
   private List<String> getLatestBaseFileNames(HoodieMetadataValidationContext fsBasedContext, String partitionPath, Set<String> baseDataFilesForCleaning) {

@@ -21,16 +21,18 @@ package org.apache.hudi.functional
 import org.apache.hadoop.fs.Path
 import org.apache.hudi.DataSourceWriteOptions
 import org.apache.hudi.DataSourceWriteOptions._
+import org.apache.hudi.cli.ArchiveExecutorUtils
+import org.apache.hudi.cli.ArchiveExecutorUtils.HoodieMetadataValidationContext
 import org.apache.hudi.client.SparkRDDWriteClient
 import org.apache.hudi.client.common.HoodieSparkEngineContext
 import org.apache.hudi.client.transaction.IngestionPrimaryWriterBasedConflictResolutionStrategy
 import org.apache.hudi.client.utils.MetadataConversionUtils
 import org.apache.hudi.common.config.HoodieMetadataConfig
-import org.apache.hudi.common.model.{ActionType, HoodieBaseFile, HoodieCommitMetadata, HoodieTableType, WriteOperationType}
+import org.apache.hudi.common.model._
 import org.apache.hudi.common.table.timeline.HoodieInstant
 import org.apache.hudi.common.table.{HoodieTableConfig, HoodieTableMetaClient}
 import org.apache.hudi.common.testutils.RawTripTestPayload.recordsToStrings
-import org.apache.hudi.config.{HoodieCleanConfig, HoodieClusteringConfig, HoodieCompactionConfig, HoodieLockConfig, HoodieWriteConfig}
+import org.apache.hudi.config._
 import org.apache.hudi.exception.HoodieWriteConflictException
 import org.apache.hudi.metadata.{HoodieBackedTableMetadata, HoodieTableMetadataUtil, MetadataPartitionType}
 import org.apache.hudi.testutils.HoodieSparkClientTestBase
@@ -51,7 +53,6 @@ import scala.collection.{JavaConverters, mutable}
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.language.postfixOps
-import scala.util.Using
 
 @Tag("functional")
 class TestRecordLevelIndex extends HoodieSparkClientTestBase {
@@ -112,6 +113,7 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
     doWriteAndValidateDataAndRecordIndex(hudiOpts,
       operation = DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL,
       saveMode = SaveMode.Append)
+    ArchiveExecutorUtils.validateRecordIndex(new HoodieMetadataValidationContext(context, metaClient, true))
   }
 
   @Disabled("needs delete support")
