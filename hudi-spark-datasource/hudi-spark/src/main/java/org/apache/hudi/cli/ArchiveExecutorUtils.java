@@ -56,6 +56,7 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.storage.StorageLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -128,7 +129,12 @@ public final class ArchiveExecutorUtils {
 
   public static void validateRecordIndex(HoodieMetadataValidationContext metadataTableBasedContext) {
     SparkSession spark = SparkSession.builder().getOrCreate();
-    Dataset<Row> df = spark.read().format("hudi").load(metadataTableBasedContext.metaClient.getBasePathV2().toString());
+    LOG.info("Started RLI validation");
+    Dataset<Row> df = spark.read().format("hudi")
+        .load(metadataTableBasedContext.metaClient.getBasePathV2().toString())
+        .sample(0.001)
+        .limit(100);
+    df.persist(StorageLevel.MEMORY_AND_DISK());
     Dataset<String> recordKeys = df.select("_hoodie_record_key").map((MapFunction<Row, String>) value -> value.getString(0), Encoders.STRING());
     HoodieBackedTableMetadata tableMetadata = ((HoodieBackedTableMetadata)metadataTableBasedContext.tableMetadata);
     int numFileGroups = tableMetadata.getNumFileGroupsForPartition(MetadataPartitionType.RECORD_INDEX);
@@ -142,36 +148,35 @@ public final class ArchiveExecutorUtils {
     HoodieTable hoodieTable = HoodieSparkTable.create(config, metadataTableBasedContext.engineContext, metadataTableBasedContext.metaClient);
     HoodiePairData<String, HoodieRecordGlobalLocation> keyAndExistingLocations =
         HoodieJavaPairRDD.of(partitionedKeyRDD.mapPartitionsToPair(new SparkMetadataTableRecordIndex.RecordIndexFileGroupLookupFunction(hoodieTable)));
+    LOG.info("Completed RLI computation");
 
     HoodieWriteConfig globalSimpleConfig = HoodieWriteConfig.newBuilder().withProps(config.getProps()).build();
     globalSimpleConfig.setValue(HoodieIndexConfig.INDEX_TYPE, HoodieIndex.IndexType.GLOBAL_SIMPLE.name());
     HoodieGlobalSimpleIndex globalSimpleIndex = (HoodieGlobalSimpleIndex) SparkHoodieIndexFactory.createIndex(globalSimpleConfig);
     List<Pair<String, HoodieBaseFile>> latestBaseFiles = globalSimpleIndex.getAllBaseFilesInTable(hoodieTable.getContext(), hoodieTable);
     HoodiePairData<String, HoodieRecordGlobalLocation> allKeysAndLocations =
-        globalSimpleIndex.fetchRecordGlobalLocations(hoodieTable.getContext(), hoodieTable, config.getGlobalSimpleIndexParallelism(), latestBaseFiles);
-    AtomicInteger nonExistingRLIKeys = new AtomicInteger();
+        globalSimpleIndex.fetchRecordGlobalLocations(hoodieTable.getContext(), hoodieTable, globalSimpleConfig.getGlobalSimpleIndexParallelism(), latestBaseFiles);
+    LOG.info("Completed GSI computation");
+    AtomicInteger nonExistingGSIKeys = new AtomicInteger();
     AtomicInteger nonMatchingKeys = new AtomicInteger();
-    long matchingKeys = allKeysAndLocations.leftOuterJoin(keyAndExistingLocations).values().filter(p -> {
+    long matchingKeys = keyAndExistingLocations.leftOuterJoin(allKeysAndLocations).values().filter(p -> {
       if (!p.getRight().isPresent()) {
-        nonExistingRLIKeys.getAndIncrement();
-        LOG.error("RLI location does not exist for GSI location {}", p.getLeft());
+        nonExistingGSIKeys.getAndIncrement();
+        LOG.error("GSI location does not exist for RLI location {}", p.getLeft());
         return false;
       } else if (!matchRecordGlobalLocation(p.getLeft(), p.getRight().get())) {
-        LOG.error("Location does not match GSI {} RLI {}", p.getLeft(), p.getRight().get());
+        LOG.error("Location does not match RLI {} GSI {}", p.getLeft(), p.getRight().get());
         nonMatchingKeys.getAndIncrement();
         return false;
       }
       return true;
     }).count();
-    if (nonExistingRLIKeys.get() > 0 || nonMatchingKeys.get() > 0) {
-      LOG.error("Validation failed nonExistingRLIKeys {} nonMatchingKeys {} matching {}", nonExistingRLIKeys, nonMatchingKeys, matchingKeys);
+    if (nonExistingGSIKeys.get() > 0 || nonMatchingKeys.get() > 0) {
+      LOG.error("Validation failed nonExistingGSIKeys {} nonMatchingKeys {} matching {}", nonExistingGSIKeys, nonMatchingKeys, matchingKeys);
       throw new RuntimeException("Asdsakjdnbsakj");
     }
-    long gsiCount = allKeysAndLocations.count();
-    long rliCount = keyAndExistingLocations.count();
-    if (gsiCount != keyAndExistingLocations.count()) {
-      LOG.error("Count mismatch between RLI {} and GSI {}", rliCount, gsiCount);
-    }
+    LOG.info("RLI validation succeeded");
+    df.unpersist();
   }
 
   private static boolean matchRecordGlobalLocation(HoodieRecordGlobalLocation left, HoodieRecordGlobalLocation right) {

@@ -32,6 +32,7 @@ import org.apache.hudi.common.model._
 import org.apache.hudi.common.table.timeline.HoodieInstant
 import org.apache.hudi.common.table.{HoodieTableConfig, HoodieTableMetaClient}
 import org.apache.hudi.common.testutils.RawTripTestPayload.recordsToStrings
+import org.apache.hudi.common.util.ValidationUtils
 import org.apache.hudi.config._
 import org.apache.hudi.exception.HoodieWriteConflictException
 import org.apache.hudi.metadata.{HoodieBackedTableMetadata, HoodieTableMetadataUtil, MetadataPartitionType}
@@ -660,8 +661,8 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
       val partitionPath: String = row.getAs("_hoodie_partition_path")
       val fileName: String = row.getAs("_hoodie_file_name")
       val recordLocation = recordIndexMap.get(recordKey)
-      assertEquals(partitionPath, recordLocation.getPartitionPath)
-      assertTrue(fileName.startsWith(recordLocation.getFileId), fileName + " should start with " + recordLocation.getFileId)
+      ValidationUtils.checkState(partitionPath.equals(recordLocation.getPartitionPath))
+      ValidationUtils.checkState(fileName.startsWith(recordLocation.getFileId), fileName + " should start with " + recordLocation.getFileId)
     }
 
     val deletedRows = deletedDf.collect()
