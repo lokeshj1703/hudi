@@ -444,7 +444,7 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
       operation = DataSourceWriteOptions.INSERT_OPERATION_OPT_VAL,
       saveMode = SaveMode.Overwrite)
     doWriteAndValidateDataAndRecordIndex(hudiOpts,
-      operation = DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL,
+      operation = "index",
       saveMode = SaveMode.Append)
     doWriteAndValidateDataAndRecordIndex(hudiOpts,
       operation = DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL,
@@ -518,6 +518,8 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
     } else if (operation == INSERT_OVERWRITE_OPERATION_OPT_VAL) {
       latestBatch = recordsToStrings(dataGen.generateInsertsForPartition(
         getInstantTime(), 5, dataGen.getPartitionPaths.last)).asScala
+    } else if (operation == "index") {
+      latestBatch = recordsToStrings(dataGen.generateUniqueUpdates(getInstantTime(), 1)).asScala
     } else {
       latestBatch = recordsToStrings(dataGen.generateInserts(getInstantTime(), 5)).asScala
     }

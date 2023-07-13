@@ -260,9 +260,8 @@ public class DataSourceUtils {
     SparkRDDReadClient globalSimpleReadClient = new SparkRDDReadClient(engineContext, writeConfig);
     long startTime = System.currentTimeMillis();
     JavaRDD<HoodieRecord> globalRecords = globalSimpleReadClient.tagLocation(hoodieRecords);
-    globalRecords.rdd().foreach(r -> {
-      System.out.println("GLOBAL key " + r.getRecordKey() + " location " + r.getCurrentLocation());
-      return null;
+    globalRecords.foreach(r -> {
+      LOG.info("GLOBAL key " + r.getRecordKey() + " current location " + r.getCurrentLocation() + " new location " + r.getNewLocation());
     });
     LOG.warn("Total tag location time :: " + (System.currentTimeMillis() - startTime));
 
@@ -270,9 +269,8 @@ public class DataSourceUtils {
     SparkRDDReadClient recordIndexReadClient = new SparkRDDReadClient(engineContext, writeConfig);
     startTime = System.currentTimeMillis();
     JavaRDD<HoodieRecord> rliRecords = recordIndexReadClient.tagLocation(hoodieRecords);
-    rliRecords.rdd().foreach(r -> {
-      System.out.println("RLI key " + r.getRecordKey() + " location " + r.getCurrentLocation());
-      return null;
+    rliRecords.foreach(r -> {
+      LOG.info("RLI key " + r.getRecordKey() + " current location " + r.getCurrentLocation() + " new location " + r.getNewLocation());
     });
     LOG.warn("Total tag location time :: " + (System.currentTimeMillis() - startTime));
     return new HoodieWriteResult(HoodieJavaRDD.getJavaRDD(engineContext.emptyHoodieData()));
