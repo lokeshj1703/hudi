@@ -37,12 +37,14 @@ import org.apache.hudi.common.util.ReflectionUtils;
 import org.apache.hudi.common.util.StringUtils;
 import org.apache.hudi.common.util.TablePathUtils;
 import org.apache.hudi.config.HoodieCompactionConfig;
+import org.apache.hudi.config.HoodieIndexConfig;
 import org.apache.hudi.config.HoodiePayloadConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.data.HoodieJavaRDD;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieNotSupportedException;
 import org.apache.hudi.exception.TableNotFoundException;
+import org.apache.hudi.index.HoodieIndex;
 import org.apache.hudi.table.BulkInsertPartitioner;
 
 import org.apache.avro.generic.GenericRecord;
@@ -254,9 +256,24 @@ public class DataSourceUtils {
 
   public static HoodieWriteResult triggerTagLocationWithReadClient(JavaSparkContext jssc, JavaRDD<HoodieRecord> hoodieRecords, HoodieWriteConfig writeConfig) throws HoodieException {
     HoodieSparkEngineContext engineContext = new HoodieSparkEngineContext(jssc);
-    SparkRDDReadClient readClient = new SparkRDDReadClient(engineContext, writeConfig);
+    writeConfig.setValue(HoodieIndexConfig.INDEX_TYPE.key(), HoodieIndex.IndexType.GLOBAL_SIMPLE.name());
+    SparkRDDReadClient globalSimpleReadClient = new SparkRDDReadClient(engineContext, writeConfig);
     long startTime = System.currentTimeMillis();
-    readClient.tagLocation(hoodieRecords).count();
+    JavaRDD<HoodieRecord> globalRecords = globalSimpleReadClient.tagLocation(hoodieRecords);
+    globalRecords.rdd().foreach(r -> {
+      System.out.println("GLOBAL key "+r.getRecordKey()+" location "+r.getCurrentLocation());
+      return null;
+    });
+    LOG.warn("Total tag location time :: " + (System.currentTimeMillis() - startTime));
+
+    writeConfig.setValue(HoodieIndexConfig.INDEX_TYPE.key(), HoodieIndex.IndexType.RECORD_INDEX.name());
+    SparkRDDReadClient recordIndexReadClient = new SparkRDDReadClient(engineContext, writeConfig);
+    startTime = System.currentTimeMillis();
+    JavaRDD<HoodieRecord> rliRecords = recordIndexReadClient.tagLocation(hoodieRecords);
+    rliRecords.rdd().foreach(r -> {
+      System.out.println("GLOBAL key "+r.getRecordKey()+" location "+r.getCurrentLocation());
+      return null;
+    });
     LOG.warn("Total tag location time :: " + (System.currentTimeMillis() - startTime));
     return new HoodieWriteResult(HoodieJavaRDD.getJavaRDD(engineContext.emptyHoodieData()));
   }
