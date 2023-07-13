@@ -261,7 +261,7 @@ public class DataSourceUtils {
     long startTime = System.currentTimeMillis();
     JavaRDD<HoodieRecord> globalRecords = globalSimpleReadClient.tagLocation(hoodieRecords);
     globalRecords.rdd().foreach(r -> {
-      System.out.println("GLOBAL key "+r.getRecordKey()+" location "+r.getCurrentLocation());
+      System.out.println("GLOBAL key " + r.getRecordKey() + " location " + r.getCurrentLocation());
       return null;
     });
     LOG.warn("Total tag location time :: " + (System.currentTimeMillis() - startTime));
@@ -271,7 +271,7 @@ public class DataSourceUtils {
     startTime = System.currentTimeMillis();
     JavaRDD<HoodieRecord> rliRecords = recordIndexReadClient.tagLocation(hoodieRecords);
     rliRecords.rdd().foreach(r -> {
-      System.out.println("GLOBAL key "+r.getRecordKey()+" location "+r.getCurrentLocation());
+      System.out.println("RLI key " + r.getRecordKey() + " location " + r.getCurrentLocation());
       return null;
     });
     LOG.warn("Total tag location time :: " + (System.currentTimeMillis() - startTime));
