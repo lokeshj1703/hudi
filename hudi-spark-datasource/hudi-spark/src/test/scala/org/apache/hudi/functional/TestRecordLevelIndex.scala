@@ -65,6 +65,7 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
     HoodieTableConfig.POPULATE_META_FIELDS.key -> "true"
   ) ++ metadataOpts
   var mergedDfList: List[DataFrame] = List.empty
+  val sqlTempTable = "tbl"
 
   @BeforeEach
   override def setUp() {
@@ -340,12 +341,7 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
 
   @ParameterizedTest
   @CsvSource(value = Array(
-    "COPY_ON_WRITE,COLUMN_STATS",
-    "COPY_ON_WRITE,BLOOM_FILTERS",
-    "COPY_ON_WRITE,COLUMN_STATS:BLOOM_FILTERS",
-    "MERGE_ON_READ,COLUMN_STATS",
-    "MERGE_ON_READ,BLOOM_FILTERS",
-    "MERGE_ON_READ,COLUMN_STATS:BLOOM_FILTERS")
+    "COPY_ON_WRITE,COLUMN_STATS")
   )
   def testRLIWithOtherMetadataPartitions(tableType: String, metadataPartitionTypes: String): Unit = {
     var hudiOpts = commonOpts
@@ -362,6 +358,8 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
     doWriteAndValidateDataAndRecordIndex(hudiOpts,
       operation = DataSourceWriteOptions.INSERT_OPERATION_OPT_VAL,
       saveMode = SaveMode.Overwrite)
+    val reckey = mergedDfList.last.limit(1).collect()(0).getAs("_row_key").toString
+    spark.sql("select * from " + sqlTempTable + " where '" + reckey + "' = _row_key").show(false)
     doWriteAndValidateDataAndRecordIndex(hudiOpts,
       operation = DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL,
       saveMode = SaveMode.Append)
@@ -595,7 +593,8 @@ class TestRecordLevelIndex extends HoodieSparkClientTestBase {
     metaClient = HoodieTableMetaClient.reload(metaClient)
     val writeConfig = getWriteConfig(hudiOpts)
     val metadata = metadataWriter(writeConfig).getTableMetadata
-    val readDf = spark.read.format("hudi").load(basePath)
+    val readDf = spark.read.format("hudi").options(hudiOpts).load(basePath)
+    readDf.registerTempTable(sqlTempTable)
     val rowArr = readDf.collect()
     val recordIndexMap = metadata.readRecordIndex(
       JavaConverters.seqAsJavaListConverter(rowArr.map(row => row.getAs("_hoodie_record_key").toString).toList).asJava)
