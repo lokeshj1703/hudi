@@ -31,7 +31,7 @@ import org.apache.hudi.metadata.HoodieMetadataPayload
 import org.apache.hudi.util.JFunction
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{And, Expression, Literal}
+import org.apache.spark.sql.catalyst.expressions.{And, BinaryExpression, Expression, IsNotNull, Literal, Or}
 import org.apache.spark.sql.execution.datasources.{FileIndex, FileStatusCache, NoopCache, PartitionDirectory}
 import org.apache.spark.sql.hudi.DataSkippingUtils.translateIntoColumnStatsIndexFilterExpr
 import org.apache.spark.sql.hudi.HoodieSqlCommonUtils
@@ -44,6 +44,7 @@ import java.text.SimpleDateFormat
 import java.util.stream.Collectors
 import javax.annotation.concurrent.NotThreadSafe
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 import scala.util.control.NonFatal
 import scala.util.{Failure, Success, Try}
 
@@ -242,8 +243,11 @@ case class HoodieFileIndex(spark: SparkSession,
     // NOTE: Non-partitioned tables are assumed to consist from a single partition
     //       encompassing the whole table
     val prunedPartitions = listMatchingPartitionPaths (partitionFilters)
-    getInputFileSlices(prunedPartitions: _*).asScala.toSeq.map(
-      { case (partition, fileSlices) => (Option.apply(partition), fileSlices.asScala) })
+    val value = getInputFileSlices(prunedPartitions: _*).asScala.toSeq.map(
+      { case (partition, fileSlices) =>
+        (Option.apply(partition), fileSlices.asScala)
+      })
+    value
   }
 
   /**
@@ -269,6 +273,38 @@ case class HoodieFileIndex(spark: SparkSession,
     allFileNames -- allIndexedFileNames
   }
 
+  private def processRecordIndexQueryFiltersIfPossible(queryFilters: Seq[Expression]): (Seq[(Expression, String)], Seq[Expression]) = {
+    val colStatIndexFilters: mutable.Buffer[Expression] = mutable.Buffer.empty
+    var queries: mutable.Buffer[Expression] = mutable.Buffer.empty
+
+    queryFilters.foreach(e => if (e.isInstanceOf[IsNotNull]) {
+      colStatIndexFilters += e
+    } else {
+      queries += e
+    })
+    if (queries.size > 2 || queries.isEmpty) {
+
+    } else if (queries.size == 2) {
+      queries = mutable.Buffer.apply(And(queries(0), queries(1)))
+    }
+    recordLevelIndex.filterCompoundQuery(queries.head)
+    (recordIndexFilters, colStatIndexFilters)
+  }
+
+  private def getRecordFilters(query: BinaryExpression): (Seq[(Expression, String)], Seq[Expression]) = {
+    val recordFilters: mutable.Buffer[(Expression, String)] = mutable.Buffer.empty
+    val colStatFilters: mutable.Buffer[Expression] = mutable.Buffer.empty
+    for (q <- query.children) {
+      val filter = recordLevelIndex.filterQueryWithRecordKey(q)
+      if (filter.nonEmpty) {
+        filter.foreach(t => recordFilters += t)
+      } else {
+        colStatFilters += q
+      }
+    }
+    (recordFilters, colStatFilters)
+  }
+
   /**
    * Computes pruned list of candidate base-files' names based on provided list of {@link dataFilters}
    * conditions, by leveraging Metadata Table's Column Statistics index (hereon referred as ColStats for brevity)
@@ -288,6 +324,7 @@ case class HoodieFileIndex(spark: SparkSession,
     //          CSI only contains stats for top-level columns, in this case for "struct")
     //          - Any expression not directly referencing top-level column (for ex, sub-queries, since there's
     //          nothing CSI in particular could be applied for)
+    val (recordIndexQueryFilters, columnStatQueryFilters) = processQueryFilters(queryFilters)
     lazy val queryReferencedColumns = collectReferencedColumns(spark, queryFilters, schema)
 
     if (!isMetadataTableEnabled || !isDataSkippingEnabled) {

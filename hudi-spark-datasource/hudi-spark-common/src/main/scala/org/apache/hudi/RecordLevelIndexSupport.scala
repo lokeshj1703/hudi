@@ -27,7 +27,7 @@ import org.apache.hudi.metadata.{HoodieTableMetadata, HoodieTableMetadataUtil}
 import org.apache.hudi.util.JFunction
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, EqualTo, Expression, In, Literal}
+import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, BinaryExpression, EqualTo, Expression, In, Literal, Or}
 
 import scala.collection.{JavaConverters, mutable}
 
@@ -159,7 +159,38 @@ class RecordLevelIndexSupport(spark: SparkSession,
     Option.empty
   }
 
-    /**
+  def filterCompoundQuery(query: Expression): (Set[String], Seq[Expression]) = {
+    query match {
+      case andQuery: And =>
+        processCompoundQuery(andQuery, (s1, s2) => s1.intersect(s2))
+      case orQuery: Or =>
+        processCompoundQuery(orQuery, (s1, s2) => s1.union(s2))
+      case otherQuery =>
+        val recKeys = filterQueryWithRecordKey(otherQuery).map(t => t._2.toSet)
+        if (recKeys.isDefined) {
+          (recKeys.get, Seq.empty)
+        } else {
+          (Set.empty, Seq.apply(otherQuery))
+        }
+    }
+  }
+
+  private def processCompoundQuery(query: BinaryExpression, function1: (Set[String], Set[String]) => Set[String])
+  : (Set[String], Seq[Expression]) = {
+    val leftRecordKeysOpt = filterQueryWithRecordKey(query.left).map(t => t._2.toSet)
+    val rightRecordKeysOpt = filterQueryWithRecordKey(query.right).map(t => t._2.toSet)
+    if (leftRecordKeysOpt.isDefined && rightRecordKeysOpt.isDefined) {
+      (function1.apply(leftRecordKeysOpt.get, rightRecordKeysOpt.get), Seq.empty)
+    } else if (leftRecordKeysOpt.isEmpty && rightRecordKeysOpt.isEmpty) {
+      (Set.empty, Seq.apply(query))
+    } else {
+      val (recordKeysOpt, otherQuery) = if (leftRecordKeysOpt.isDefined) (leftRecordKeysOpt, query.right) else (rightRecordKeysOpt, query.left)
+      (recordKeysOpt.get, Seq.apply(otherQuery))
+    }
+  }
+
+
+  /**
    * Returns true in cases when metadata table is enabled and Record Level Index is built.
    */
   def isIndexApplicable(queryFilters: Seq[Expression]): Boolean = {
