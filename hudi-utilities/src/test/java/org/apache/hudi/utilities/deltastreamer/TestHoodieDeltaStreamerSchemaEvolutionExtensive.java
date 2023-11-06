@@ -41,7 +41,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /**
  * Takes hours to run. Use to debug schema evolution. Don't enable for ci
  */
-@Disabled
 public class TestHoodieDeltaStreamerSchemaEvolutionExtensive extends TestHoodieDeltaStreamerSchemaEvolutionBase {
 
   protected void testBase(String updateFile, String updateColumn, String condition, int count) throws Exception {
@@ -101,6 +100,8 @@ public class TestHoodieDeltaStreamerSchemaEvolutionExtensive extends TestHoodieD
    * Main testing logic for non-type promotion tests
    */
   protected void testBase(String updateFile, String updateColumn, Map<String,Integer> conditions, Boolean nullable) throws Exception {
+    this.useKafkaSource = true;
+    this.useSchemaProvider = true;
     boolean isCow = tableType.equals("COPY_ON_WRITE");
     PARQUET_SOURCE_ROOT = basePath + "parquetFilesDfs" + testNum++;
     tableBasePath = basePath + "test_parquet_table" + testNum;
@@ -365,6 +366,8 @@ public class TestHoodieDeltaStreamerSchemaEvolutionExtensive extends TestHoodieD
   }
 
   protected void testTypePromotionBase(String colName, DataType startType, DataType updateType, DataType endType) throws Exception {
+    this.useKafkaSource = true;
+    this.useSchemaProvider = true;
     boolean isCow = tableType.equals("COPY_ON_WRITE");
     PARQUET_SOURCE_ROOT = basePath + "parquetFilesDfs" + testNum++;
     tableBasePath = basePath + "test_parquet_table" + testNum;

@@ -20,6 +20,7 @@
 package org.apache.hudi.utilities.deltastreamer;
 
 import org.apache.hudi.AvroConversionUtils;
+import org.apache.hudi.DataSourceWriteOptions;
 import org.apache.hudi.HoodieSparkUtils;
 import org.apache.hudi.avro.HoodieAvroUtils;
 import org.apache.hudi.common.config.TypedProperties;
@@ -53,10 +54,12 @@ import org.junit.jupiter.api.BeforeEach;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 
-import static org.apache.hudi.common.config.HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS;
 import static org.apache.hudi.utilities.schema.RowBasedSchemaProvider.HOODIE_RECORD_NAMESPACE;
 import static org.apache.hudi.utilities.schema.RowBasedSchemaProvider.HOODIE_RECORD_STRUCT_NAME;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -66,6 +69,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * https://hudi.apache.org/docs/schema_evolution#out-of-the-box-schema-evolution
  */
 public class TestHoodieDeltaStreamerSchemaEvolutionBase extends HoodieDeltaStreamerTestBase {
+
+  private static Set<String> createdTopicNames = new HashSet<>();
 
   protected String tableType;
   protected String tableBasePath;
@@ -99,10 +104,20 @@ public class TestHoodieDeltaStreamerSchemaEvolutionBase extends HoodieDeltaStrea
   protected HoodieStreamer deltaStreamer;
 
   protected HoodieDeltaStreamer.Config getDeltaStreamerConfig() throws IOException {
+    return getDeltaStreamerConfig(true);
+  }
+
+  protected HoodieDeltaStreamer.Config getDeltaStreamerConfig(boolean nullForDeletedCols) throws IOException {
+    String[] transformerClasses = useTransformer ? new String[] {TestHoodieDeltaStreamer.TestIdentityTransformer.class.getName()}
+        : new String[0];
+    return getDeltaStreamerConfig(transformerClasses, nullForDeletedCols);
+  }
+
+  protected HoodieDeltaStreamer.Config getDeltaStreamerConfig(String[] transformerClasses, boolean nullForDeletedCols) throws IOException {
     TypedProperties extraProps = new TypedProperties();
     extraProps.setProperty("hoodie.datasource.write.table.type", tableType);
     extraProps.setProperty("hoodie.datasource.write.row.writer.enable", rowWriterEnable.toString());
-    extraProps.setProperty(SET_NULL_FOR_MISSING_COLUMNS.key(), "true");
+    extraProps.setProperty(DataSourceWriteOptions.SET_NULL_FOR_MISSING_COLUMNS().key(), Boolean.toString(nullForDeletedCols));
 
     //we set to 0 so that we create new base files on insert instead of adding inserts to existing filegroups via small file handling
     extraProps.setProperty("hoodie.parquet.small.file.limit", "0");
@@ -130,9 +145,8 @@ public class TestHoodieDeltaStreamerSchemaEvolutionBase extends HoodieDeltaStrea
     }
 
     List<String> transformerClassNames = new ArrayList<>();
-    if (useTransformer) {
-      transformerClassNames.add(TestHoodieDeltaStreamer.TestIdentityTransformer.class.getName());
-    }
+    Collections.addAll(transformerClassNames, transformerClasses);
+
     HoodieDeltaStreamer.Config cfg;
     if (useKafkaSource) {
       prepareAvroKafkaDFSSource(PROPS_FILENAME_TEST_AVRO_KAFKA, null, topicName,"partition_path", extraProps);
@@ -151,7 +165,7 @@ public class TestHoodieDeltaStreamerSchemaEvolutionBase extends HoodieDeltaStrea
 
   protected void addData(Dataset<Row> df, Boolean isFirst) {
     if (useSchemaProvider) {
-      TestSchemaProvider.schema = AvroConversionUtils.convertStructTypeToAvroSchema(df.schema(), HOODIE_RECORD_STRUCT_NAME, HOODIE_RECORD_NAMESPACE);
+      TestSchemaProvider.sourceSchema = AvroConversionUtils.convertStructTypeToAvroSchema(df.schema(), HOODIE_RECORD_STRUCT_NAME, HOODIE_RECORD_NAMESPACE);
     }
     if (useKafkaSource) {
       addKafkaData(df, isFirst);
@@ -165,8 +179,9 @@ public class TestHoodieDeltaStreamerSchemaEvolutionBase extends HoodieDeltaStrea
   }
 
   protected void addKafkaData(Dataset<Row> df, Boolean isFirst) {
-    if (isFirst) {
+    if (isFirst && !createdTopicNames.contains(topicName)) {
       testUtils.createTopic(topicName);
+      createdTopicNames.add(topicName);
     }
     List<GenericRecord> records = HoodieSparkUtils.createRdd(df, HOODIE_RECORD_STRUCT_NAME, HOODIE_RECORD_NAMESPACE, false, Option.empty()).toJavaRDD().collect();
     try (Producer<String, byte[]> producer = new KafkaProducer<>(getProducerProperties())) {
@@ -233,14 +248,29 @@ public class TestHoodieDeltaStreamerSchemaEvolutionBase extends HoodieDeltaStrea
 
   public static class TestSchemaProvider extends SchemaProvider {
 
-    public static Schema schema;
+    public static Schema sourceSchema;
+    public static Schema targetSchema = null;
+
     public TestSchemaProvider(TypedProperties props, JavaSparkContext jssc) {
       super(props, jssc);
     }
 
     @Override
     public Schema getSourceSchema() {
-      return schema;
+      return sourceSchema;
+    }
+
+    @Override
+    public Schema getTargetSchema() {
+      return targetSchema != null ? targetSchema : sourceSchema;
+    }
+
+    public static void setTargetSchema(Schema targetSchema) {
+      TestSchemaProvider.targetSchema = targetSchema;
+    }
+
+    public static void resetTargetSchema() {
+      TestSchemaProvider.targetSchema = null;
     }
   }
 }
