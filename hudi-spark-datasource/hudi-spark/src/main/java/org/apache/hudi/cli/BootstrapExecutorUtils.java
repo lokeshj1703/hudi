@@ -39,6 +39,8 @@ import org.apache.hudi.hadoop.fs.HadoopFSUtils;
 import org.apache.hudi.hive.HiveSyncConfig;
 import org.apache.hudi.hive.HiveSyncTool;
 import org.apache.hudi.index.HoodieIndex;
+import org.apache.hudi.keygen.CustomAvroKeyGenerator;
+import org.apache.hudi.keygen.CustomKeyGenerator;
 import org.apache.hudi.keygen.NonpartitionedKeyGenerator;
 import org.apache.hudi.keygen.SimpleKeyGenerator;
 import org.apache.hudi.keygen.TimestampBasedAvroKeyGenerator;
@@ -56,6 +58,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -295,8 +298,9 @@ public class BootstrapExecutorUtils implements Serializable {
   }
 
   private Map<String, Object> extractConfigsRelatedToTimestampBasedKeyGenerator(String keyGenerator, TypedProperties params) {
-    if (TimestampBasedKeyGenerator.class.getCanonicalName().equals(keyGenerator)
-        || TimestampBasedAvroKeyGenerator.class.getCanonicalName().equals(keyGenerator)) {
+    String[] keyGeneratorClasses = new String[]{TimestampBasedKeyGenerator.class.getCanonicalName(), TimestampBasedAvroKeyGenerator.class.getCanonicalName(),
+        CustomKeyGenerator.class.getCanonicalName(), CustomAvroKeyGenerator.class.getCanonicalName()};
+    if (Arrays.asList(keyGeneratorClasses).contains(keyGenerator)) {
       return filterProperties(params, HoodieTableConfig.PERSISTED_CONFIG_LIST);
     }
     return Collections.emptyMap();

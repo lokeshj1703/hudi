@@ -60,7 +60,7 @@ import org.apache.hudi.internal.schema.convert.AvroInternalSchemaConverter
 import org.apache.hudi.internal.schema.utils.SerDeHelper
 import org.apache.hudi.keygen.constant.KeyGeneratorType
 import org.apache.hudi.keygen.factory.HoodieSparkKeyGeneratorFactory
-import org.apache.hudi.keygen.{BaseKeyGenerator, TimestampBasedAvroKeyGenerator, TimestampBasedKeyGenerator}
+import org.apache.hudi.keygen.{BaseKeyGenerator, CustomAvroKeyGenerator, CustomKeyGenerator, TimestampBasedAvroKeyGenerator, TimestampBasedKeyGenerator}
 import org.apache.hudi.metrics.Metrics
 import org.apache.hudi.storage.HoodieStorage
 import org.apache.hudi.sync.common.HoodieSyncConfig
@@ -1126,8 +1126,9 @@ class HoodieSparkSqlWriterInternal {
 
   private def extractConfigsRelatedToTimestampBasedKeyGenerator(keyGenerator: String,
                                                                 params: Map[String, String]): Map[String, String] = {
-    if (classOf[TimestampBasedKeyGenerator].getCanonicalName.equals(keyGenerator) ||
-      classOf[TimestampBasedAvroKeyGenerator].getCanonicalName.equals(keyGenerator)) {
+    val keyGeneratorClasses = Seq(classOf[TimestampBasedKeyGenerator].getCanonicalName, classOf[TimestampBasedAvroKeyGenerator].getCanonicalName,
+      classOf[CustomKeyGenerator].getCanonicalName, classOf[CustomAvroKeyGenerator].getCanonicalName)
+    if (keyGeneratorClasses.contains(keyGenerator)) {
       val allKeys = getAllConfigKeys(HoodieTableConfig.PERSISTED_CONFIG_LIST)
       params.filterKeys(allKeys.contains).toMap
     } else {
