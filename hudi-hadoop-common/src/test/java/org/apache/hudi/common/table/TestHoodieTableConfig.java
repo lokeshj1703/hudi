@@ -229,6 +229,7 @@ public class TestHoodieTableConfig extends HoodieCommonTestHarness {
     HoodieTableConfig config = new HoodieTableConfig(storage, metaPath, null, null);
     assertEquals("p1:simple,p2:timestamp", HoodieTableConfig.getPartitionFieldPropForKeyGenerator(config).get());
     assertEquals("p1,p2", HoodieTableConfig.getPartitionFieldProp(config).get());
+    assertArrayEquals(new String[] {"p1:simple", "p2:timestamp"}, HoodieTableConfig.getPartitionFieldsForKeyGenerator(config).get().toArray());
     assertArrayEquals(new String[] {"p1", "p2"}, HoodieTableConfig.getPartitionFields(config).get());
     assertEquals("p1", HoodieTableConfig.getPartitionFieldWithoutKeyGenPartitionType("p1:simple", config));
   }
