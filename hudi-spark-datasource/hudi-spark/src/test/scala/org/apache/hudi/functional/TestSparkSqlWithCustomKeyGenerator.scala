@@ -19,14 +19,15 @@
 
 package org.apache.hudi.functional
 
+import org.apache.avro.Schema
 import org.apache.hudi.HoodieSparkUtils
 import org.apache.hudi.common.config.TypedProperties
+import org.apache.hudi.common.table.TableSchemaResolver
 import org.apache.hudi.common.util.StringUtils
 import org.apache.hudi.exception.HoodieException
 import org.apache.hudi.functional.TestSparkSqlWithCustomKeyGenerator._
 import org.apache.hudi.testutils.HoodieClientTestUtils.createMetaClient
 import org.apache.hudi.util.SparkKeyGenUtils
-
 import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.hudi.common.HoodieSparkSqlTestBase
 import org.joda.time.DateTime
@@ -230,6 +231,9 @@ class TestSparkSqlWithCustomKeyGenerator extends HoodieSparkSqlTestBase {
               Seq(100, "a100", "299.0", 1706800227, "cat10")
             )
           }
+
+          // Validate ts field is still of type int in the table
+          validateTsFieldSchema(tablePath)
         }
       }
     }
@@ -308,6 +312,10 @@ class TestSparkSqlWithCustomKeyGenerator extends HoodieSparkSqlTestBase {
         testSecondRoundInserts(tableNameSimpleKey, TS_TO_STRING_FUNC, segmentPartitionFunc)
         testFirstRoundInserts(tableNameCustom1, TS_TO_STRING_FUNC, segmentPartitionFunc)
         testSecondRoundInserts(tableNameCustom2, TS_FORMATTER_FUNC, customPartitionFunc)
+
+        // Validate ts field is still of type int in the table
+        validateTsFieldSchema(tablePathCustom1)
+        validateTsFieldSchema(tablePathCustom2)
       }
       }
     }
@@ -365,6 +373,9 @@ class TestSparkSqlWithCustomKeyGenerator extends HoodieSparkSqlTestBase {
         // INSERT INTO should succeed now
         testFirstRoundInserts(tableName, TS_FORMATTER_FUNC, customPartitionFunc)
       }
+
+      // Validate ts field is still of type int in the table
+      validateTsFieldSchema(tablePath)
     }
     }
   }
@@ -396,8 +407,27 @@ class TestSparkSqlWithCustomKeyGenerator extends HoodieSparkSqlTestBase {
         s"""
            | SELECT * from $tableName
            | """.stripMargin).count())
+      val incrementalDF = spark.read.format("hudi").
+        option("hoodie.datasource.query.type", "incremental").
+        option("hoodie.datasource.read.begin.instanttime", 0).
+        load(tablePath)
+      incrementalDF.createOrReplaceTempView("tbl_incremental")
+      assertEquals(7, spark.sql(
+        s"""
+           | SELECT * from tbl_incremental
+           | """.stripMargin).count())
+
+      // Validate ts field is still of type int in the table
+      validateTsFieldSchema(tablePath)
     }
     }
+  }
+
+  private def validateTsFieldSchema(tablePath: String): Unit = {
+    val metaClient = createMetaClient(spark, tablePath)
+    val schemaResolver = new TableSchemaResolver(metaClient)
+    val nullableIntSchema = Schema.createUnion(Schema.create(Schema.Type.NULL), Schema.create(Schema.Type.INT))
+    assertEquals(nullableIntSchema, schemaResolver.getTableAvroSchema(true).getField("ts").schema())
   }
 
   private def testFirstRoundInserts(tableName: String,
