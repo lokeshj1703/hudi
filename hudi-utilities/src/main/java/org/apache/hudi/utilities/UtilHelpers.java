@@ -138,7 +138,7 @@ public class UtilHelpers {
   public static HoodieRecordMerger createRecordMerger(Properties props) {
     List<String> recordMergerImplClasses = ConfigUtils.split2List(props.getProperty(HoodieWriteConfig.RECORD_MERGER_IMPLS.key(), ""));
     HoodieRecordMerger recordMerger = HoodieWriteConfig.getRecordMerger(null,
-        RecordMergeMode.getValue(props.getProperty(HoodieWriteConfig.RECORD_MERGE_MODE.key(), HoodieWriteConfig.RECORD_MERGE_MODE.defaultValue())),
+        RecordMergeMode.getValue(ConfigUtils.getStringWithAltKeys(props, HoodieWriteConfig.RECORD_MERGE_MODE, true)),
         EngineType.SPARK, recordMergerImplClasses, Option.ofNullable(props.getProperty(HoodieWriteConfig.RECORD_MERGER_STRATEGY.key())));
 
     return recordMerger;
