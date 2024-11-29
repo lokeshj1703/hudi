@@ -61,11 +61,49 @@ import org.scalatest.Ignore
 import java.util.stream.Collectors
 import scala.collection.JavaConverters
 
-@Ignore
 class TestExpressionIndex extends HoodieSparkSqlTestBase {
 
   override protected def beforeAll(): Unit = {
     initQueryIndexConf()
+  }
+
+  test("Test HoodieFileGroupReader") {
+    if (HoodieSparkUtils.gteqSpark3_3 && HoodieTestUtils.getJavaVersion == 8) {
+      withTempDir { tmp =>
+        Seq("mor").foreach { tableType =>
+          val tableName = generateTableName
+          val basePath = s"${tmp.getCanonicalPath}/$tableName"
+          spark.sql(
+            s"""
+               |create table $tableName (
+               |  id int,
+               |  name string,
+               |  price double,
+               |  ts long
+               |) using hudi
+               | options (
+               |  primaryKey ='id',
+               |  type = '$tableType',
+               |  preCombineField = 'ts'
+               | )
+               | partitioned by(ts)
+               | location '$basePath'
+       """.stripMargin)
+          // ts=1000 and from_unixtime(ts, 'yyyy-MM-dd') = '1970-01-01'
+          spark.sql(s"insert into $tableName values(1, 'a1', 10, 1000)")
+          // ts=1000 and from_unixtime(ts, 'yyyy-MM-dd') = '1970-01-01'
+          spark.sql(s"insert into $tableName values(1, 'a1', 10, 1000)")
+          // ts=100000 and from_unixtime(ts, 'yyyy-MM-dd') = '1970-01-02'
+          spark.sql(s"insert into $tableName values(2, 'a2', 10, 100000)")
+          // ts=10000000 and from_unixtime(ts, 'yyyy-MM-dd') = '1970-04-26'
+          spark.sql(s"insert into $tableName values(3, 'a3', 10, 10000000)")
+          // check query result
+          checkAnswer(s"select id, name from $tableName where from_unixtime(ts, 'yyyy-MM-dd') = '1970-01-01'")(
+            Seq(1, "a1")
+          )
+        }
+      }
+    }
   }
 
   test("Test Expression Index With Hive Sync Non Partitioned External Table") {
