@@ -27,7 +27,6 @@ import org.apache.hudi.client.utils.SparkInternalSchemaConverter;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.engine.HoodieReaderContext;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
-import org.apache.hudi.common.table.HoodieTableVersion;
 import org.apache.hudi.common.table.TableSchemaResolver;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
 import org.apache.hudi.common.table.timeline.InstantFileNameGenerator;
@@ -63,7 +62,6 @@ public class SparkBroadcastManager extends EngineBroadcastManager {
 
   private final transient HoodieEngineContext context;
   private final transient HoodieTableMetaClient metaClient;
-  private final HoodieTableVersion tableVersion;
 
   protected Option<SparkParquetReader> parquetReaderOpt = Option.empty();
   protected Broadcast<SQLConf> sqlConfBroadcast;
@@ -73,7 +71,6 @@ public class SparkBroadcastManager extends EngineBroadcastManager {
   public SparkBroadcastManager(HoodieEngineContext context, HoodieTableMetaClient metaClient) {
     this.context = context;
     this.metaClient = metaClient;
-    this.tableVersion = metaClient.getTableConfig().getTableVersion();
   }
 
   @Override
@@ -119,8 +116,10 @@ public class SparkBroadcastManager extends EngineBroadcastManager {
     SparkParquetReader sparkParquetReader = parquetReaderBroadcast.getValue();
     if (sparkParquetReader != null) {
       List<Filter> filters = new ArrayList<>();
-      return Option.of(new SparkFileFormatInternalRowReaderContext(sparkParquetReader, JavaConverters.asScalaBufferConverter(filters).asScala().toSeq(),
-          JavaConverters.asScalaBufferConverter(filters).asScala().toSeq(), tableVersion));
+      return Option.of(new SparkFileFormatInternalRowReaderContext(
+          sparkParquetReader,
+          JavaConverters.asScalaBufferConverter(filters).asScala().toSeq(),
+          JavaConverters.asScalaBufferConverter(filters).asScala().toSeq()));
     } else {
       throw new HoodieException("Cannot get the broadcast Spark Parquet reader.");
     }
