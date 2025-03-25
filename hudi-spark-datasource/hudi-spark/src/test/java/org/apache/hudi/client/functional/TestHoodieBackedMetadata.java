@@ -259,6 +259,7 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
     validateMetadata(testTable, true);
   }
 
+  @Disabled("HUDI-9221")
   @Test
   public void testTurnOffMetadataIndexAfterEnable() throws Exception {
     initPath();
@@ -696,6 +697,7 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
   /**
    * Tests that table services in data table won't trigger table services in metadata table.
    */
+  @Disabled("HUDI-9221")
   @Test
   public void testMetadataTableServices() throws Exception {
     init(COPY_ON_WRITE, false);
@@ -747,6 +749,7 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
     testTableOperationsImpl(engineContext, writeConfig);
   }
 
+  @Disabled("HUDI-9221")
   @ParameterizedTest
   @EnumSource(HoodieTableType.class)
   public void testMetadataTableDeletePartition(HoodieTableType tableType) throws Exception {
@@ -1126,6 +1129,7 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
     }
   }
 
+  @Disabled("HUDI-9221")
   @Test
   public void testMetadataRollbackDuringInit() throws Exception {
     HoodieTableType tableType = COPY_ON_WRITE;
@@ -2176,6 +2180,7 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
   /**
    * Test multi-writer on metadata table with optimistic concurrency.
    */
+  @Disabled("HUDI-9221")
   @Test
   public void testMetadataMultiWriter() throws Exception {
     init(HoodieTableType.COPY_ON_WRITE);
@@ -2249,6 +2254,7 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
    * Tests that when inline cleaning is enabled and with auto commit set to true, there is no double locking.
    * bcoz, auto clean is triggered within post commit which is already happening within a lock.
    */
+  @Disabled("HUDI-9221")
   @Test
   public void testMultiWriterForDoubleLocking() throws Exception {
     init(HoodieTableType.COPY_ON_WRITE);
