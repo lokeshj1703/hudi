@@ -28,6 +28,7 @@ import org.apache.hudi.common.util.MarkerUtils;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.storage.HoodieStorage;
 import org.apache.hudi.storage.StoragePath;
+import org.apache.hudi.table.action.rollback.RollbackUtils;
 
 import org.apache.spark.api.java.JavaSparkContext;
 import org.junit.jupiter.api.Test;
@@ -138,7 +139,7 @@ public abstract class TestWriteMarkersBase extends HoodieCommonTestHarness {
         : CollectionUtils.createImmutableList("file2");
     // then
     assertIterableEquals(expectedPaths,
-        writeMarkers.getAppendedLogPaths(context, 2).stream().sorted().collect(Collectors.toList())
+        RollbackUtils.getAppendedLogPaths(writeMarkers, context, 2).stream().sorted().collect(Collectors.toList())
     );
   }
 

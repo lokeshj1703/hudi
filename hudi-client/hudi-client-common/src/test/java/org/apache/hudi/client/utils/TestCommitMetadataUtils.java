@@ -38,12 +38,14 @@ import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.hadoop.fs.HoodieWrapperFileSystem;
 import org.apache.hudi.storage.StoragePath;
 import org.apache.hudi.table.HoodieTable;
+import org.apache.hudi.table.action.rollback.RollbackUtils;
 import org.apache.hudi.table.marker.WriteMarkers;
 
 import org.apache.hadoop.fs.FileSystem;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
 import java.io.IOException;
@@ -122,12 +124,12 @@ public class TestCommitMetadataUtils extends HoodieCommonTestHarness {
     // Assume these are paths to log files that were supposed to be in commitMetadata but are missing
     Set<String> missingLogFiles = new HashSet<>(Arrays.asList("path/to/log1", "path/to/log2"));
     // Mocking the behavior to return missing log files
-    WriteMarkers markers = mock(WriteMarkers.class);
+    MockedStatic<RollbackUtils> utilities = Mockito.mockStatic(RollbackUtils.class);
     // Add valid log files along with missing ones
-    when(markers.getAppendedLogPaths(any(), anyInt())).thenReturn(missingLogFiles);
+    utilities.when(() -> RollbackUtils.getAppendedLogPaths(any(), any(), anyInt())).thenReturn(missingLogFiles);
     when(table.getFileSystemView()).thenReturn(mock(org.apache.hudi.common.table.view.HoodieTableFileSystemView.class));
     missingLogFiles.addAll(commitMetadataWithLogFiles.getRight());
-    when(markers.getAppendedLogPaths(any(), anyInt())).thenReturn(missingLogFiles);
+    utilities.when(() -> RollbackUtils.getAppendedLogPaths(any(), any(), anyInt())).thenReturn(missingLogFiles);
     when(table.getFileSystemView()).thenReturn(mock(org.apache.hudi.common.table.view.HoodieTableFileSystemView.class));
 
     // Mock filesystem and file status

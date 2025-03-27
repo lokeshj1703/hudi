@@ -108,7 +108,7 @@ public class BaseRollbackHelperTableVersionSix implements Serializable {
     // rollback markers are added under rollback instant itself.
     Set<String> logPaths = new HashSet<>();
     try {
-      logPaths = markers.getAppendedLogPaths(context, config.getFinalizeWriteParallelism());
+      logPaths = RollbackUtils.getAppendedLogPaths(markers, context, config.getFinalizeWriteParallelism());
     } catch (FileNotFoundException fnf) {
       LOG.warn("Rollback never failed and hence no marker dir was found. Safely moving on");
     } catch (IOException e) {

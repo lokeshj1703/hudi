@@ -46,13 +46,25 @@ public abstract class WriteMarkers implements Serializable {
   private static final Logger LOG = LoggerFactory.getLogger(WriteMarkers.class);
 
   protected final String basePath;
-  protected final transient StoragePath markerDirPath;
+  protected final StoragePath markerDirPath;
   protected final String instantTime;
 
   public WriteMarkers(String basePath, String markerFolderPath, String instantTime) {
     this.basePath = basePath;
     this.markerDirPath = new StoragePath(markerFolderPath);
     this.instantTime = instantTime;
+  }
+
+  public String getBasePath() {
+    return basePath;
+  }
+
+  public StoragePath getMarkerDirPath() {
+    return markerDirPath;
+  }
+
+  public String getInstantTime() {
+    return instantTime;
   }
 
   /**
@@ -208,15 +220,6 @@ public abstract class WriteMarkers implements Serializable {
    * @throws IOException
    */
   public abstract Set<String> createdAndMergedDataPaths(HoodieEngineContext context, int parallelism) throws IOException;
-
-  /**
-   * Fetches markers for log files w/ Append IOType. Used only for table version 6.
-   * @param context {@code HoodieEngineContext} instance.
-   * @param parallelism parallelism for reading the marker files in the directory.
-   * @return all the log file paths of write IO type "APPEND"
-   * @throws IOException
-   */
-  public abstract Set<String> getAppendedLogPaths(HoodieEngineContext context, int parallelism) throws IOException;
 
   /**
    * @return all the marker paths

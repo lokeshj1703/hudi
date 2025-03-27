@@ -48,7 +48,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.apache.hudi.common.table.marker.MarkerOperation.ALL_MARKERS_URL;
-import static org.apache.hudi.common.table.marker.MarkerOperation.APPEND_MARKERS_URL;
 import static org.apache.hudi.common.table.marker.MarkerOperation.CREATE_AND_MERGE_MARKERS_URL;
 import static org.apache.hudi.common.table.marker.MarkerOperation.CREATE_MARKER_URL;
 import static org.apache.hudi.common.table.marker.MarkerOperation.DELETE_MARKER_DIR_URL;
@@ -115,19 +114,6 @@ public class TimelineServerBasedWriteMarkers extends WriteMarkers {
     } catch (IOException e) {
       throw new HoodieRemoteException("Failed to get CREATE and MERGE data file paths in "
           + markerDirPath, e);
-    }
-  }
-
-  @Override
-  public Set<String> getAppendedLogPaths(HoodieEngineContext context, int parallelism) throws IOException {
-    Map<String, String> paramsMap = Collections.singletonMap(MARKER_DIR_PATH_PARAM, markerDirPath.toString());
-    try {
-      Set<String> markerPaths = executeRequestToTimelineServer(
-          APPEND_MARKERS_URL, paramsMap, new TypeReference<Set<String>>() {}, RequestMethod.GET);
-      return markerPaths.stream().map(WriteMarkers::stripMarkerSuffix).collect(Collectors.toSet());
-    } catch (IOException e) {
-      throw new HoodieRemoteException("Failed to get APPEND log file paths in "
-          + markerDirPath.toString(), e);
     }
   }
 
@@ -228,5 +214,9 @@ public class TimelineServerBasedWriteMarkers extends WriteMarkers {
     return timelineServiceClient.makeRequest(
             TimelineServiceClient.Request.newBuilder(method, requestPath).addQueryParams(queryParameters).build())
         .getDecodedContent(reference);
+  }
+
+  public TimelineServiceClient getTimelineServiceClient() {
+    return timelineServiceClient;
   }
 }
