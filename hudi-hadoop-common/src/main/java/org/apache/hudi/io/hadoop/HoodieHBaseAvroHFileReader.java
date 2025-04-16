@@ -328,8 +328,16 @@ public class HoodieHBaseAvroHFileReader extends HoodieAvroHFileReaderImplBase {
 
     class KeyPrefixIterator implements Iterator<IndexedRecord> {
       private IndexedRecord next = null;
-      private boolean eof = false;
-      private boolean initialized = false;
+      private boolean eof;
+
+      KeyPrefixIterator() {
+        try {
+          // Initialize scanner if needed
+          this.eof = !scanner.seekTo();
+        } catch (IOException e) {
+          throw new HoodieIOException("Failed to deserialize payload", e);
+        }
+      }
 
       @Override
       public boolean hasNext() {
@@ -340,15 +348,6 @@ public class HoodieHBaseAvroHFileReader extends HoodieAvroHFileReaderImplBase {
         }
 
         try {
-          // Initialize scanner if needed
-          if (!initialized) {
-            initialized = true;
-            if (!scanner.seekTo()) {
-              eof = true;
-              return false;
-            }
-          }
-
           Cell c = scanner.getCell();
           if (c == null) {
             eof = true;
@@ -368,6 +367,7 @@ public class HoodieHBaseAvroHFileReader extends HoodieAvroHFileReaderImplBase {
           byte[] valueBytes = copyValueFromCell(c);
           next = deserialize(keyBytes, valueBytes, writerSchema, readerSchema);
 
+          // In case scanner is not able to advance, it means we reached EOF
           // Advance for next call
           eof = !scanner.next();
           return true;
