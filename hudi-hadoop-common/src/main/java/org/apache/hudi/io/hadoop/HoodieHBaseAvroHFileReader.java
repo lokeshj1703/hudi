@@ -328,15 +328,9 @@ public class HoodieHBaseAvroHFileReader extends HoodieAvroHFileReaderImplBase {
 
     class KeyPrefixIterator implements Iterator<IndexedRecord> {
       private IndexedRecord next = null;
-      private boolean eof;
+      private boolean eof = false;
 
       KeyPrefixIterator() {
-        try {
-          // Initialize scanner if needed
-          this.eof = !scanner.seekTo();
-        } catch (IOException e) {
-          throw new HoodieIOException("Failed to deserialize payload", e);
-        }
       }
 
       @Override
