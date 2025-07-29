@@ -20,10 +20,13 @@
 package org.apache.hudi.common.engine;
 
 import org.apache.hudi.common.function.SerializableBiFunction;
+import org.apache.hudi.common.model.HoodieAvroRecord;
+import org.apache.hudi.common.model.HoodieKey;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.table.HoodieTableConfig;
 import org.apache.hudi.common.table.read.BufferedRecord;
 import org.apache.hudi.common.util.DefaultJavaTypeConverter;
+import org.apache.hudi.common.util.HoodieRecordUtils;
 import org.apache.hudi.common.util.JavaTypeConverter;
 import org.apache.hudi.common.util.LocalAvroSchemaCache;
 import org.apache.hudi.common.util.OrderingValues;
@@ -57,6 +60,17 @@ public abstract class RecordContext<T> implements Serializable {
   public RecordContext(HoodieTableConfig tableConfig) {
     this.typeConverter = new DefaultJavaTypeConverter();
     updateRecordKeyExtractor(tableConfig, tableConfig.populateMetaFields());
+  }
+
+  public HoodieRecord constructHoodieAvroRecord(BufferedRecord<T> bufferedRecord, String payloadClass) {
+    GenericRecord record = null;
+    if (!bufferedRecord.isDelete()) {
+      Schema recordSchema = getSchemaFromBufferRecord(bufferedRecord);
+      record = convertToAvroRecord(bufferedRecord.getRecord(), recordSchema);
+    }
+    HoodieKey hoodieKey = new HoodieKey(bufferedRecord.getRecordKey(), null);
+    return new HoodieAvroRecord<>(hoodieKey,
+        HoodieRecordUtils.loadPayload(payloadClass, record, bufferedRecord.getOrderingValue()), null);
   }
 
   public void updateRecordKeyExtractor(HoodieTableConfig tableConfig, boolean shouldUseMetadataFields) {

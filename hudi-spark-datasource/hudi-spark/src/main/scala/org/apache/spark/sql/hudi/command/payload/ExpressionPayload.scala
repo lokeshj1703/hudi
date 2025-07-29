@@ -84,7 +84,7 @@ class ExpressionPayload(@transient record: GenericRecord,
                                         properties: Properties): HOption[IndexedRecord] = {
     val recordSchema = getRecordSchema(properties)
 
-    val sourceRecord = bytesToAvro(recordBytes, recordSchema)
+    val sourceRecord = bytesToAvro(recordBytes, schema)
     val joinedRecord = joinRecord(sourceRecord, targetRecord, properties)
 
     processMatchedRecord(ConvertibleRecord(joinedRecord), Some(targetRecord), properties)
@@ -511,6 +511,8 @@ object ExpressionPayload {
                 //       [[InternalRow]] producing another [[InternalRow]] as an outcome
                 val conditionEvaluator = SafeProjection.create(Seq(condition))
                 val assignmentEvaluator = SafeProjection.create(assignments)
+                System.out.println("condition evaluator: " + condition)
+                System.out.println("assignment evaluator : " + assignments)
 
                 conditionEvaluator -> assignmentEvaluator
             }

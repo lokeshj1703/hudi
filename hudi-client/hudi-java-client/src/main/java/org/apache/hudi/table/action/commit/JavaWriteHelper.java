@@ -31,6 +31,7 @@ import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.index.HoodieIndex;
+import org.apache.hudi.keygen.KeyGenerator;
 import org.apache.hudi.table.HoodieTable;
 
 import org.apache.avro.Schema;
@@ -69,7 +70,7 @@ public class JavaWriteHelper<T,R> extends BaseWriteHelper<T, List<HoodieRecord<T
                                                   TypedProperties props,
                                                   BufferedRecordMerger<T> recordMerger,
                                                   HoodieReaderContext<T> readerContext,
-                                                  List<String> orderingFieldNames) {
+                                                  List<String> orderingFieldNames, KeyGenerator keyGenerator) {
     boolean isIndexingGlobal = index.isGlobal();
     Map<Object, List<Pair<Object, HoodieRecord<T>>>> keyedRecords = records.stream().map(record -> {
       HoodieKey hoodieKey = record.getKey();

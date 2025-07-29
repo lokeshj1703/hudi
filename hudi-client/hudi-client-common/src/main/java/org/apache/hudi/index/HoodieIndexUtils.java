@@ -59,7 +59,6 @@ import org.apache.hudi.common.util.ReflectionUtils;
 import org.apache.hudi.common.util.collection.CloseableMappingIterator;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.config.HoodieWriteConfig;
-import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.exception.HoodieIndexException;
 import org.apache.hudi.exception.HoodieMetadataIndexException;
@@ -68,6 +67,7 @@ import org.apache.hudi.internal.schema.utils.SerDeHelper;
 import org.apache.hudi.io.storage.HoodieFileReader;
 import org.apache.hudi.io.storage.HoodieIOFactory;
 import org.apache.hudi.keygen.BaseKeyGenerator;
+import org.apache.hudi.keygen.KeyGenUtils;
 import org.apache.hudi.keygen.KeyGenerator;
 import org.apache.hudi.keygen.factory.HoodieAvroKeyGeneratorFactory;
 import org.apache.hudi.metadata.HoodieIndexVersion;
@@ -569,7 +569,7 @@ public class HoodieIndexUtils {
     Option<Pair<String, String>> customDeleteMarkerKeyValue = deleteConfigs.getLeft();
     boolean hasBuiltInDelete = deleteConfigs.getRight();
     int hoodieOperationPos = FileGroupReaderSchemaHandler.getHoodieOperationPos(writerSchema);
-    KeyGenerator keyGenerator = getKeyGenerator(config, hoodieTable);
+    KeyGenerator keyGenerator = KeyGenUtils.getKeyGenerator(config, hoodieTable.getContext());
     HoodieData<HoodieRecord<R>> taggedUpdatingRecords = untaggedUpdatingRecords.mapToPair(r -> Pair.of(r.getRecordKey(), r))
         .leftOuterJoin(existingRecords.mapToPair(r -> Pair.of(r.getRecordKey(), r)))
         .values().flatMap(entry -> {
@@ -608,16 +608,6 @@ public class HoodieIndexUtils {
           }
         });
     return taggedUpdatingRecords.union(taggedNewRecords);
-  }
-
-  private static KeyGenerator getKeyGenerator(HoodieWriteConfig config, HoodieTable hoodieTable) {
-    KeyGenerator keyGenerator;
-    try {
-      keyGenerator = hoodieTable.getContext().createKeyGenerator(config.getProps());
-    } catch (IOException e) {
-      throw new HoodieException("Could not create key generator", e);
-    }
-    return keyGenerator;
   }
 
   public static <R> HoodieData<HoodieRecord<R>> tagGlobalLocationBackToRecords(

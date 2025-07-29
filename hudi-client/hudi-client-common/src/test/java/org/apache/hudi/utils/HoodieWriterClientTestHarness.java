@@ -84,6 +84,7 @@ import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.index.HoodieIndex;
 import org.apache.hudi.io.storage.HoodieIOFactory;
+import org.apache.hudi.keygen.KeyGenUtils;
 import org.apache.hudi.keygen.KeyGenerator;
 import org.apache.hudi.keygen.constant.KeyGeneratorOptions;
 import org.apache.hudi.storage.StoragePath;
@@ -544,7 +545,7 @@ public abstract class HoodieWriterClientTestHarness extends HoodieCommonTestHarn
   }
 
   protected List<HoodieRecord<RawTripTestPayload>> dedupForCopyOnWriteStorage(HoodieWriteConfig writeConfig, HoodieData<HoodieRecord> records,
-                                                                              boolean isGlobal, int additionalParallelism, int expectedNumPartitions) {
+                                                                              boolean isGlobal, int additionalParallelism, int expectedNumPartitions, HoodieTestTable testTable) {
     HoodieIndex index = mock(HoodieIndex.class);
     when(index.isGlobal()).thenReturn(isGlobal);
     int dedupParallelism = records.getNumPartitions() + additionalParallelism;
@@ -563,6 +564,7 @@ public abstract class HoodieWriterClientTestHarness extends HoodieCommonTestHarn
         new SerializableSchema(writeClient.getConfig().getSchema()).get(),
         writeClient.getConfig().getProps(),
         metaClient.getTableConfig().getPartialUpdateMode());
+    KeyGenerator keyGenerator = KeyGenUtils.getKeyGenerator(writeConfig, getEngineContext());
     HoodieData<HoodieRecord<RawTripTestPayload>> dedupedRecsRdd =
         (HoodieData<HoodieRecord<RawTripTestPayload>>) HoodieWriteHelper.newInstance()
             .deduplicateRecords(
@@ -573,7 +575,8 @@ public abstract class HoodieWriterClientTestHarness extends HoodieCommonTestHarn
                 writeConfig.getProps(),
                 recordMerger,
                 readerContext,
-                orderingFieldNames);
+                orderingFieldNames,
+                keyGenerator);
     assertEquals(expectedNumPartitions, dedupedRecsRdd.getNumPartitions());
     List<HoodieRecord<RawTripTestPayload>> dedupedRecs = dedupedRecsRdd.collectAsList();
     assertEquals(isGlobal ? 1 : 2, dedupedRecs.size());
@@ -1071,13 +1074,13 @@ public abstract class HoodieWriterClientTestHarness extends HoodieCommonTestHarn
     HoodieData<HoodieRecord> records = HoodieListData.eager(recordList);
     HoodieWriteConfig writeConfig = getWriteConfigWithPopulateMetaFieldsAndAllowOperationMetaField(populateMetaFields, allowOperationMetadataField);
     // Global dedup should be done based on recordKey only
-    List<HoodieRecord<RawTripTestPayload>> dedupedRecs = dedupForCopyOnWriteStorage(writeConfig, records, true, allowOperationMetadataField ? 100 : 2, records.getNumPartitions());
+    List<HoodieRecord<RawTripTestPayload>> dedupedRecs = dedupForCopyOnWriteStorage(writeConfig, records, true, allowOperationMetadataField ? 100 : 2, records.getNumPartitions(), testTable);
     if (allowOperationMetadataField) {
       assertEquals(dedupedRecs.get(0).getOperation(), recordList.get(2).getOperation());
     } else {
       assertEquals(dedupedRecs.get(0).getPartitionPath(), recordList.get(2).getPartitionPath());
       // non-Global dedup should be done based on both recordKey and partitionPath
-      dedupForCopyOnWriteStorage(writeConfig, records, false, 2, records.getNumPartitions());
+      dedupForCopyOnWriteStorage(writeConfig, records, false, 2, records.getNumPartitions(), testTable);
     }
     // Perform write-action and check
     try (BaseHoodieWriteClient client = getHoodieWriteClient(writeConfig)) {

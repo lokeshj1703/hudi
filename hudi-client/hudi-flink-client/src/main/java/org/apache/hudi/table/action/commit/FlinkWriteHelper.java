@@ -34,6 +34,7 @@ import org.apache.hudi.common.util.Option;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieUpsertException;
 import org.apache.hudi.index.HoodieIndex;
+import org.apache.hudi.keygen.KeyGenerator;
 import org.apache.hudi.table.HoodieTable;
 import org.apache.hudi.table.action.HoodieWriteMetadata;
 
@@ -102,7 +103,8 @@ public class FlinkWriteHelper<T, R> extends BaseWriteHelper<T, Iterator<HoodieRe
                                                       TypedProperties props,
                                                       BufferedRecordMerger<T> recordMerger,
                                                       HoodieReaderContext<T> readerContext,
-                                                      List<String> orderingFieldNames) {
+                                                      List<String> orderingFieldNames,
+                                                      KeyGenerator keyGenerator) {
     // If index used is global, then records are expected to differ in their partitionPath
     Map<Object, List<HoodieRecord<T>>> keyedRecords = CollectionUtils.toStream(records)
         .collect(Collectors.groupingBy(record -> record.getKey().getRecordKey()));

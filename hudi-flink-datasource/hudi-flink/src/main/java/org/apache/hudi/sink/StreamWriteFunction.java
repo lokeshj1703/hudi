@@ -33,6 +33,8 @@ import org.apache.hudi.common.util.VisibleForTesting;
 import org.apache.hudi.common.util.collection.MappingIterator;
 import org.apache.hudi.configuration.FlinkOptions;
 import org.apache.hudi.exception.HoodieException;
+import org.apache.hudi.keygen.KeyGenUtils;
+import org.apache.hudi.keygen.KeyGenerator;
 import org.apache.hudi.metrics.FlinkStreamWriteMetrics;
 import org.apache.hudi.sink.buffer.MemorySegmentPoolFactory;
 import org.apache.hudi.sink.buffer.RowDataBucket;
@@ -443,10 +445,11 @@ public class StreamWriteFunction extends AbstractStreamWriteFunction<HoodieFlink
 
   protected Iterator<HoodieRecord> deduplicateRecordsIfNeeded(Iterator<HoodieRecord> records) {
     if (config.get(FlinkOptions.PRE_COMBINE)) {
+      KeyGenerator keyGenerator = KeyGenUtils.getKeyGenerator(writeClient.getConfig(), writeClient.getEngineContext());
       return FlinkWriteHelper.newInstance().deduplicateRecords(
           records, null, -1, this.writeClient.getConfig().getSchema(),
           this.writeClient.getConfig().getProps(),
-          recordMerger, readerContext, orderingFieldNames);
+          recordMerger, readerContext, orderingFieldNames, keyGenerator);
     } else {
       return records;
     }

@@ -20,6 +20,7 @@ package org.apache.hudi.keygen;
 
 import org.apache.hudi.avro.HoodieAvroUtils;
 import org.apache.hudi.common.config.TypedProperties;
+import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.PartitionPathEncodeUtils;
@@ -331,5 +332,18 @@ public class KeyGenUtils {
     return !props.containsKey(KeyGeneratorOptions.RECORDKEY_FIELD_NAME.key())
         || props.getProperty(KeyGeneratorOptions.RECORDKEY_FIELD_NAME.key()).equals(StringUtils.EMPTY_STRING);
     // spark-sql sets record key config to empty string for update, and couple of other statements.
+  }
+
+  /**
+   * Creates a key generator for the table using the provided write config and table instance
+   */
+  public static KeyGenerator getKeyGenerator(HoodieWriteConfig config, HoodieEngineContext engineContext) {
+    KeyGenerator keyGenerator;
+    try {
+      keyGenerator = engineContext.createKeyGenerator(config.getProps());
+    } catch (IOException e) {
+      throw new HoodieException("Could not create key generator", e);
+    }
+    return keyGenerator;
   }
 }

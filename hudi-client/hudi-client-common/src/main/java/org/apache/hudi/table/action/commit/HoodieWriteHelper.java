@@ -29,13 +29,16 @@ import org.apache.hudi.common.engine.RecordContext;
 import org.apache.hudi.common.model.HoodieKey;
 import org.apache.hudi.common.model.HoodieOperation;
 import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.table.HoodieTableConfig;
 import org.apache.hudi.common.table.read.BufferedRecord;
 import org.apache.hudi.common.table.read.BufferedRecordMerger;
 import org.apache.hudi.common.table.read.FileGroupReaderSchemaHandler;
+import org.apache.hudi.common.util.ConfigUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.index.HoodieIndex;
+import org.apache.hudi.keygen.KeyGenerator;
 import org.apache.hudi.table.HoodieTable;
 
 import org.apache.avro.Schema;
@@ -72,7 +75,8 @@ public class HoodieWriteHelper<T, R> extends BaseWriteHelper<T, HoodieData<Hoodi
                                                         TypedProperties props,
                                                         BufferedRecordMerger<T> recordMerger,
                                                         HoodieReaderContext<T> readerContext,
-                                                        List<String> orderingFieldNames) {
+                                                        List<String> orderingFieldNames,
+                                                        KeyGenerator keyGenerator) {
     boolean isIndexingGlobal = index.isGlobal();
     final SerializableSchema schema = new SerializableSchema(schemaStr);
     RecordContext recordContext = readerContext.getRecordContext();
@@ -104,9 +108,16 @@ public class HoodieWriteHelper<T, R> extends BaseWriteHelper<T, HoodieData<Hoodi
         Option<BufferedRecord<T>> merged = merge(
             newRecord, oldRecord, schema.get(), schema.get(), recordContext, orderingFieldNames, recordMerger,
             hasBuiltInDelete, customDeleteMarkerKeyValue, hoodieOperationPos);
+        TypedProperties recordCreationProps = TypedProperties.copy(props);
+        recordCreationProps.setProperty(HoodieTableConfig.POPULATE_META_FIELDS.key(), "false");
         // NOTE: For merge mode based merging, it returns non-null.
         //       For mergers / payloads based merging, it may return null.
-        reducedRecord = recordContext.constructHoodieRecord(merged.get());
+        reducedRecord = recordContext.constructHoodieAvroRecord(merged.get(), ConfigUtils.getPayloadClass(props));
+//      recordContext.constructHoodieRecord(merged.get());
+//            .wrapIntoHoodieRecordPayloadWithKeyGen(
+//                writerSchema,
+//                recordCreationProps,
+//                Option.of((BaseKeyGenerator) keyGenerator));
       } catch (IOException e) {
         throw new HoodieException(String.format("Error to merge two records, %s, %s", rec1, rec2), e);
       }

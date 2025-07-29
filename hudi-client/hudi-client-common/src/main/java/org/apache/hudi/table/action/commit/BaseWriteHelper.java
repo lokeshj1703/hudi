@@ -38,6 +38,8 @@ import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.exception.HoodieUpsertException;
 import org.apache.hudi.index.HoodieIndex;
+import org.apache.hudi.keygen.KeyGenUtils;
+import org.apache.hudi.keygen.KeyGenerator;
 import org.apache.hudi.table.HoodieTable;
 import org.apache.hudi.table.action.HoodieWriteMetadata;
 
@@ -120,6 +122,7 @@ public abstract class BaseWriteHelper<T, I, K, O, R> extends ParallelismHelper<I
         table.getMetaClient().getTableConfig().getPartialUpdateMode());
     // Due to new records we cant use meta fields for record key extraction
     readerContext.getRecordContext().updateRecordKeyExtractor(table.getMetaClient().getTableConfig(), false);
+    KeyGenerator keyGenerator = KeyGenUtils.getKeyGenerator(table.getConfig(), table.getContext());
     return deduplicateRecords(
         records,
         table.getIndex(),
@@ -128,7 +131,8 @@ public abstract class BaseWriteHelper<T, I, K, O, R> extends ParallelismHelper<I
         table.getConfig().getProps(),
         recordMerger,
         readerContext,
-        orderingFieldNames);
+        orderingFieldNames,
+        keyGenerator);
   }
 
   public abstract I deduplicateRecords(I records,
@@ -138,7 +142,8 @@ public abstract class BaseWriteHelper<T, I, K, O, R> extends ParallelismHelper<I
                                        TypedProperties props,
                                        BufferedRecordMerger<T> merger,
                                        HoodieReaderContext<T> readerContext,
-                                       List<String> orderingFieldNames);
+                                       List<String> orderingFieldNames,
+                                       KeyGenerator keyGenerator);
 
   public static List<String> getOrderingFieldName(HoodieReaderContext readerContext,
                                                   TypedProperties props,
