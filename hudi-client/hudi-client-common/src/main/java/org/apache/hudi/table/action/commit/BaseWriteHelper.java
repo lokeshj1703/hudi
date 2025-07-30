@@ -105,12 +105,13 @@ public abstract class BaseWriteHelper<T, I, K, O, R> extends ParallelismHelper<I
    */
   public I deduplicateRecords(I records, HoodieTable<T, I, K, O> table, int parallelism) {
     HoodieReaderContext<T> readerContext =
-        (HoodieReaderContext<T>) table.getContext().<T>getReaderContextFactoryDuringWrite(table.getMetaClient(), table.getConfig().getRecordMerger().getRecordType())
+        (HoodieReaderContext<T>) table.getContext().<T>getReaderContextFactoryDuringWrite(table.getMetaClient(), table.getConfig().getRecordMerger().getRecordType(), table.getConfig().getProps())
             .getContext();
+    readerContext.initRecordMerger(table.getConfig().getProps());
     List<String> orderingFieldNames = getOrderingFieldName(readerContext, table.getConfig().getProps(), table.getMetaClient());
     BufferedRecordMerger<T> recordMerger = BufferedRecordMergerFactory.create(
         readerContext,
-        table.getConfig().getRecordMergeMode(),
+        readerContext.getMergeMode(),
         false,
         Option.ofNullable(table.getConfig().getRecordMerger()),
         orderingFieldNames,
@@ -118,8 +119,6 @@ public abstract class BaseWriteHelper<T, I, K, O, R> extends ParallelismHelper<I
         new SerializableSchema(table.getConfig().getSchema()).get(),
         table.getConfig().getProps(),
         table.getMetaClient().getTableConfig().getPartialUpdateMode());
-    // Due to new records we cant use meta fields for record key extraction
-    readerContext.getRecordContext().updateRecordKeyExtractor(table.getMetaClient().getTableConfig(), false);
     return deduplicateRecords(
         records,
         table.getIndex(),
@@ -201,19 +200,22 @@ public abstract class BaseWriteHelper<T, I, K, O, R> extends ParallelismHelper<I
                                                     BufferedRecordMerger<T> recordMerger,
                                                     boolean hasBuiltInDelete,
                                                     Option<Pair<String, String>> customDeleteMarkerKeyValue,
-                                                    int hoodieOperationPos) throws IOException {
+                                                    int hoodieOperationPos,
+                                                    TypedProperties properties) throws IOException {
     // Construct new buffered record.
     boolean isDelete1 = isBuiltInDeleteRecord(newRecord.getData(), recordContext, newSchema, customDeleteMarkerKeyValue)
         || isCustomDeleteRecord(newRecord.getData(), recordContext, newSchema, hasBuiltInDelete, customDeleteMarkerKeyValue)
         || isDeleteHoodieOperation(newRecord.getData(), recordContext, hoodieOperationPos);
     BufferedRecord<T> bufferedRec1 = BufferedRecord.forRecordWithContext(
-        newRecord.getData(), newSchema, recordContext, orderingFieldNames, isDelete1);
+        newRecord.getData(), newSchema, recordContext, orderingFieldNames, isDelete1,
+        Option.of(newRecord.getKey()), Option.of(newRecord.getOrderingValue(newSchema, properties)));
     // Construct old buffered record.
     boolean isDelete2 = isBuiltInDeleteRecord(oldRecord.getData(), recordContext, oldSchema, customDeleteMarkerKeyValue)
         || isCustomDeleteRecord(oldRecord.getData(), recordContext, oldSchema, hasBuiltInDelete, customDeleteMarkerKeyValue)
         || isDeleteHoodieOperation(oldRecord.getData(), recordContext, hoodieOperationPos);
     BufferedRecord<T> bufferedRec2 = BufferedRecord.forRecordWithContext(
-        oldRecord.getData(), oldSchema, recordContext, orderingFieldNames, isDelete2);
+        oldRecord.getData(), oldSchema, recordContext, orderingFieldNames, isDelete2,
+        Option.of(oldRecord.getKey()), Option.of(oldRecord.getOrderingValue(oldSchema, properties)));
     // Run merge.
     return recordMerger.deltaMerge(bufferedRec1, bufferedRec2);
   }

@@ -135,9 +135,9 @@ public abstract class HoodieEngineContext {
 
   public abstract <T> ReaderContextFactory<T> getReaderContextFactory(HoodieTableMetaClient metaClient);
 
-  public ReaderContextFactory<?> getReaderContextFactoryDuringWrite(HoodieTableMetaClient metaClient, HoodieRecord.HoodieRecordType recordType) {
+  public ReaderContextFactory<?> getReaderContextFactoryDuringWrite(HoodieTableMetaClient metaClient, HoodieRecord.HoodieRecordType recordType, TypedProperties props) {
     if (recordType == HoodieRecord.HoodieRecordType.AVRO) {
-      return new AvroReaderContextFactory(metaClient);
+      return new AvroPayloadReaderContextFactory(metaClient, props);
     }
     return getDefaultContextFactory(metaClient);
   }

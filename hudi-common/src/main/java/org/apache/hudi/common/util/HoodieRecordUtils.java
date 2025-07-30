@@ -18,6 +18,7 @@
 
 package org.apache.hudi.common.util;
 
+import org.apache.hudi.avro.HoodieAvroUtils;
 import org.apache.hudi.common.engine.EngineType;
 import org.apache.hudi.common.model.HoodieAvroRecordMerger;
 import org.apache.hudi.common.model.HoodieRecord;
@@ -29,6 +30,8 @@ import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.metadata.HoodieTableMetadata;
 
 import org.apache.avro.generic.GenericRecord;
+
+import javax.annotation.Nullable;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
@@ -135,5 +138,25 @@ public class HoodieRecordUtils {
       return record.getCurrentLocation().getInstantTime();
     }
     return null;
+  }
+
+  /**
+   * Returns the preCombine value with given field name.
+   *
+   * @param rec The avro record
+   * @param preCombineFields The preCombine field names
+   * @return the preCombine field value or 0 if the field does not exist in the avro schema
+   */
+  public static Comparable getPreCombineVal(GenericRecord rec, @Nullable String[] preCombineFields) {
+    if (preCombineFields == null) {
+      return OrderingValues.getDefault();
+    }
+    // keep consistent with writer side, using Java type for ordering value, see `DefaultHoodieRecordPayload`.
+    return OrderingValues.create(
+        preCombineFields,
+        field -> {
+          Object orderingValue = HoodieAvroUtils.getNestedFieldVal(rec, field, true, false);
+          return orderingValue == null ? OrderingValues.getDefault() : (Comparable) orderingValue;
+        });
   }
 }

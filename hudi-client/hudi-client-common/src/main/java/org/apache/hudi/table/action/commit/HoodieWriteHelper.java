@@ -27,7 +27,6 @@ import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.engine.HoodieReaderContext;
 import org.apache.hudi.common.engine.RecordContext;
 import org.apache.hudi.common.model.HoodieKey;
-import org.apache.hudi.common.model.HoodieOperation;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.table.read.BufferedRecord;
 import org.apache.hudi.common.table.read.BufferedRecordMerger;
@@ -81,7 +80,6 @@ public class HoodieWriteHelper<T, R> extends BaseWriteHelper<T, HoodieData<Hoodi
     Option<Pair<String, String>> customDeleteMarkerKeyValue = deleteConfigs.getLeft();
     boolean hasBuiltInDelete = deleteConfigs.getRight();
     int hoodieOperationPos = FileGroupReaderSchemaHandler.getHoodieOperationPos(writerSchema);
-    boolean isAvroReaderContext = readerContext instanceof HoodieAvroReaderContext;
     return records.mapToPair(record -> {
       HoodieKey hoodieKey = record.getKey();
       // If index used is global, then records are expected to differ in their partitionPath
@@ -93,27 +91,17 @@ public class HoodieWriteHelper<T, R> extends BaseWriteHelper<T, HoodieData<Hoodi
     }).reduceByKey((rec1, rec2) -> {
       HoodieRecord<T> reducedRecord;
       try {
-        HoodieRecord newRecord = rec1;
-        HoodieRecord oldRecord = rec2;
-        if (isAvroReaderContext) {
-          // We need to convert HoodieAvroRecord to HoodieAvroIndexedRecord in order to use the reader context
-          newRecord = rec1.toIndexedRecord(schema.get(), props).get();
-          oldRecord = rec2.toIndexedRecord(schema.get(), props).get();
-        }
         // NOTE: The order of rec1 and rec2 is uncertain within "reduceByKey".
         Option<BufferedRecord<T>> merged = merge(
-            newRecord, oldRecord, schema.get(), schema.get(), recordContext, orderingFieldNames, recordMerger,
-            hasBuiltInDelete, customDeleteMarkerKeyValue, hoodieOperationPos);
+            rec1, rec2, schema.get(), schema.get(), recordContext, orderingFieldNames, recordMerger,
+            hasBuiltInDelete, customDeleteMarkerKeyValue, hoodieOperationPos, props);
         // NOTE: For merge mode based merging, it returns non-null.
         //       For mergers / payloads based merging, it may return null.
-        reducedRecord = recordContext.constructHoodieRecord(merged.get());
+        reducedRecord = recordContext.constructHoodieRecord(merged.get(), rec1.getPartitionPath());
       } catch (IOException e) {
         throw new HoodieException(String.format("Error to merge two records, %s, %s", rec1, rec2), e);
       }
-      boolean choosePrev = rec1.getData().equals(reducedRecord.getData());
-      HoodieKey reducedKey = choosePrev ? rec1.getKey() : rec2.getKey();
-      HoodieOperation operation = choosePrev ? rec1.getOperation() : rec2.getOperation();
-      return reducedRecord.newInstance(reducedKey, operation);
+      return reducedRecord.newInstance(rec1.getKey(), reducedRecord.getOperation());
     }, parallelism).map(Pair::getRight);
   }
 }
