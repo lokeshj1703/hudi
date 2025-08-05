@@ -102,7 +102,7 @@ public interface UpdateProcessor<T> {
         callback.onDelete(recordKey, previousRecord);
       } else if (previousRecord != null && previousRecord != currentRecord) {
         callback.onUpdate(recordKey, previousRecord, currentRecord);
-      } else {
+      } else if (previousRecord == null) {
         callback.onInsert(recordKey, currentRecord);
       }
       return result;
