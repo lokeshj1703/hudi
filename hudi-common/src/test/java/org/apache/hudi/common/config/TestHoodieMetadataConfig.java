@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * Tests {@link HoodieMetadataConfig}.
  */
 class TestHoodieMetadataConfig {
+
   @Test
   void testGetRecordPreparationParallelism() {
     // Test default value
@@ -58,5 +59,39 @@ class TestHoodieMetadataConfig {
         .fromProperties(propsNegative)
         .build();
     assertEquals(-50, configWithNegativeValue.getRecordPreparationParallelism());
+  }
+
+  @Test
+  void testCleanerRollbackParallelism() {
+    // Test default value
+    HoodieMetadataConfig config = HoodieMetadataConfig.newBuilder().build();
+    assertEquals(512, config.getCleanerParallelism());
+    assertEquals(512, config.getRollbackParallelism());
+    assertEquals(512, config.getFinalizeWritesParallelism());
+
+    // Test custom value
+    Properties props = new Properties();
+    props.put(HoodieMetadataConfig.CLEANER_PARALLELISM.key(), "100");
+    props.put(HoodieMetadataConfig.ROLLBACK_PARALLELISM.key(), "100");
+    props.put(HoodieMetadataConfig.FINALIZE_WRITES_PARALLELISM.key(), "100");
+    HoodieMetadataConfig configWithCustomValue = HoodieMetadataConfig.newBuilder()
+        .fromProperties(props)
+        .build();
+    assertEquals(100, configWithCustomValue.getCleanerParallelism());
+    assertEquals(100, configWithCustomValue.getRollbackParallelism());
+    assertEquals(100, configWithCustomValue.getFinalizeWritesParallelism());
+
+    // Test zero value
+    Properties propsZero = new Properties();
+    props = new Properties();
+    props.put(HoodieMetadataConfig.CLEANER_PARALLELISM.key(), "0");
+    props.put(HoodieMetadataConfig.ROLLBACK_PARALLELISM.key(), "0");
+    props.put(HoodieMetadataConfig.FINALIZE_WRITES_PARALLELISM.key(), "0");
+    configWithCustomValue = HoodieMetadataConfig.newBuilder()
+        .fromProperties(props)
+        .build();
+    assertEquals(0, configWithCustomValue.getCleanerParallelism());
+    assertEquals(0, configWithCustomValue.getRollbackParallelism());
+    assertEquals(0, configWithCustomValue.getFinalizeWritesParallelism());
   }
 }
