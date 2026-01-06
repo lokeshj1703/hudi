@@ -30,6 +30,7 @@ import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestHoodieMetadataWriteUtils {
 
@@ -96,5 +97,34 @@ public class TestHoodieMetadataWriteUtils {
     assertEquals(cleanerParallelism, metadataWriteConfig.getCleanerParallelism());
     assertEquals(rollbackParallelism, metadataWriteConfig.getRollbackParallelism());
     assertEquals(finalizeWriteParallelism, metadataWriteConfig.getFinalizeWriteParallelism());
+  }
+
+  @Test
+  public void testFileSliceCache() {
+    Properties properties = new Properties();
+    properties.setProperty(HoodieMetadataConfig.ENABLE_FILE_SLICE_CACHE_OPTIMIZATION.key(), "true");
+    HoodieWriteConfig writeConfig1 = HoodieWriteConfig.newBuilder()
+        .withPath("/tmp")
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder().withProperties(properties).build())
+        .build();
+
+    HoodieWriteConfig metadataWriteConfig1 = HoodieMetadataWriteUtils.createMetadataWriteConfig(writeConfig1, HoodieFailedWritesCleaningPolicy.EAGER);
+    assertTrue(metadataWriteConfig1.shouldEnableFileSliceCacheOptimization());
+    assertEquals(HoodieMetadataConfig.FILE_SLICE_CACHE_MAX_SIZE.defaultValue(), metadataWriteConfig1.getFileSliceCacheMaxSize());
+    assertEquals(HoodieMetadataConfig.FILE_SLICE_CACHE_EXPIRATION_MINS.defaultValue(), metadataWriteConfig1.getFileSliceCacheExpirationInMins());
+
+    properties = new Properties();
+    properties.setProperty(HoodieMetadataConfig.ENABLE_FILE_SLICE_CACHE_OPTIMIZATION.key(), "true");
+    properties.setProperty(HoodieMetadataConfig.FILE_SLICE_CACHE_MAX_SIZE.key(), "10");
+    properties.setProperty(HoodieMetadataConfig.FILE_SLICE_CACHE_EXPIRATION_MINS.key(), "20");
+    HoodieWriteConfig writeConfig2 = HoodieWriteConfig.newBuilder()
+        .withPath("/tmp")
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder().withProperties(properties).build())
+        .build();
+
+    HoodieWriteConfig metadataWriteConfig2 = HoodieMetadataWriteUtils.createMetadataWriteConfig(writeConfig2, HoodieFailedWritesCleaningPolicy.EAGER);
+    assertTrue(metadataWriteConfig2.shouldEnableFileSliceCacheOptimization());
+    assertEquals(10, metadataWriteConfig2.getFileSliceCacheMaxSize());
+    assertEquals(20, metadataWriteConfig2.getFileSliceCacheExpirationInMins());
   }
 }

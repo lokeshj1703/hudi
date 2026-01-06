@@ -24,6 +24,8 @@ import org.junit.jupiter.api.Test;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests {@link HoodieMetadataConfig}.
@@ -93,5 +95,32 @@ class TestHoodieMetadataConfig {
     assertEquals(0, configWithCustomValue.getCleanerParallelism());
     assertEquals(0, configWithCustomValue.getRollbackParallelism());
     assertEquals(0, configWithCustomValue.getFinalizeWritesParallelism());
+  }
+
+  @Test
+  void testFileSliceCacheConfig() {
+    // Test default value
+    HoodieMetadataConfig config = HoodieMetadataConfig.newBuilder().build();
+    assertFalse(config.shouldEnableFileSliceCacheOptimization());
+
+    Properties props = new Properties();
+    props.put(HoodieMetadataConfig.ENABLE_FILE_SLICE_CACHE_OPTIMIZATION.key(), true);
+    config = HoodieMetadataConfig.newBuilder()
+        .fromProperties(props)
+        .build();
+    assertTrue(config.shouldEnableFileSliceCacheOptimization());
+    assertEquals(HoodieMetadataConfig.FILE_SLICE_CACHE_MAX_SIZE.defaultValue(), config.getFileSliceCacheMaxSize());
+    assertEquals(HoodieMetadataConfig.FILE_SLICE_CACHE_EXPIRATION_MINS.defaultValue(), config.getFileSliceCacheExpirationInMins());
+
+    props = new Properties();
+    props.put(HoodieMetadataConfig.ENABLE_FILE_SLICE_CACHE_OPTIMIZATION.key(), true);
+    props.put(HoodieMetadataConfig.FILE_SLICE_CACHE_MAX_SIZE.key(), "50");
+    props.put(HoodieMetadataConfig.FILE_SLICE_CACHE_EXPIRATION_MINS.key(), "10");
+    config = HoodieMetadataConfig.newBuilder()
+        .fromProperties(props)
+        .build();
+    assertTrue(config.shouldEnableFileSliceCacheOptimization());
+    assertEquals(50, config.getFileSliceCacheMaxSize());
+    assertEquals(10, config.getFileSliceCacheExpirationInMins());
   }
 }

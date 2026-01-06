@@ -386,6 +386,28 @@ public final class HoodieMetadataConfig extends HoodieConfig {
       .sinceVersion("0.14.2")
       .withDocumentation("Finalize writes parallelism to use for metadata table.");
 
+  public static final ConfigProperty<Boolean> ENABLE_FILE_SLICE_CACHE_OPTIMIZATION = ConfigProperty
+      .key(METADATA_PREFIX + ".file.slice.cache.optimization")
+      .defaultValue(false)
+      .markAdvanced()
+      .sinceVersion("0.14.2")
+      .withDocumentation("Enables cache for fetching latest file slice view. Would help RECORD_INDEX append "
+          + "handles at large scale (10000 file groups or more)");
+
+  public static final ConfigProperty<Integer> FILE_SLICE_CACHE_MAX_SIZE = ConfigProperty
+      .key(METADATA_PREFIX + ".file.slice.cache.max.size")
+      .defaultValue(10000)
+      .markAdvanced()
+      .sinceVersion("0.14.2")
+      .withDocumentation("Max size for file slice cache when " + ENABLE_FILE_SLICE_CACHE_OPTIMIZATION.key() + " is enabled");
+
+  public static final ConfigProperty<Integer> FILE_SLICE_CACHE_EXPIRATION_MINS = ConfigProperty
+      .key(METADATA_PREFIX + ".file.slice.cache.expiration.in.mins")
+      .defaultValue(120)
+      .markAdvanced()
+      .sinceVersion("0.14.2")
+      .withDocumentation("Expiration of file slice cache entries when " + ENABLE_FILE_SLICE_CACHE_OPTIMIZATION.key() + " is enabled");
+
   public long getMaxLogFileSize() {
     return getLong(MAX_LOG_FILE_SIZE_BYTES_PROP);
   }
@@ -544,6 +566,18 @@ public final class HoodieMetadataConfig extends HoodieConfig {
 
   public int getFinalizeWritesParallelism() {
     return getInt(FINALIZE_WRITES_PARALLELISM);
+  }
+
+  public boolean shouldEnableFileSliceCacheOptimization() {
+    return getBoolean(ENABLE_FILE_SLICE_CACHE_OPTIMIZATION);
+  }
+
+  public Integer getFileSliceCacheMaxSize() {
+    return getInt(FILE_SLICE_CACHE_MAX_SIZE);
+  }
+
+  public Integer getFileSliceCacheExpirationInMins() {
+    return getInt(FILE_SLICE_CACHE_EXPIRATION_MINS);
   }
 
   public static class Builder {
@@ -721,6 +755,11 @@ public final class HoodieMetadataConfig extends HoodieConfig {
 
     public Builder withMaxLogFileSizeBytes(long sizeInBytes) {
       metadataConfig.setValue(MAX_LOG_FILE_SIZE_BYTES_PROP, String.valueOf(sizeInBytes));
+      return this;
+    }
+
+    public Builder withEnableFileSliceCacheOptimization(boolean shouldEnable) {
+      metadataConfig.setValue(ENABLE_FILE_SLICE_CACHE_OPTIMIZATION, Boolean.toString(shouldEnable));
       return this;
     }
 

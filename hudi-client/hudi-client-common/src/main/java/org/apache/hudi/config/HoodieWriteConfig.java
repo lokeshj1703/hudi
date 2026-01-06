@@ -887,6 +887,28 @@ public class HoodieWriteConfig extends HoodieConfig {
       .sinceVersion("0.15.1")
       .withDocumentation("Freeze the options to be used for the write. This is useful to prevent options from being overwritten.");
 
+  public static final ConfigProperty<Boolean> ENABLE_FILE_SLICE_CACHE_OPTIMIZATION = ConfigProperty
+      .key("hoodie.write.file.slice.cache.optimization")
+      .defaultValue(false)
+      .markAdvanced()
+      .sinceVersion("0.14.2")
+      .withDocumentation("Enables cache for fetching latest file slice view.");
+
+  public static final ConfigProperty<Integer> FILE_SLICE_CACHE_MAX_SIZE = ConfigProperty
+      .key("hoodie.write.file.slice.cache.max.size")
+      .defaultValue(10000)
+      .markAdvanced()
+      .sinceVersion("0.14.2")
+      .withDocumentation("Max size for file slice cache when " + ENABLE_FILE_SLICE_CACHE_OPTIMIZATION.key() + " is enabled");
+
+  public static final ConfigProperty<Integer> FILE_SLICE_CACHE_EXPIRATION_MINS = ConfigProperty
+      .key("hoodie.write.file.slice.cache.expiration.in.mins")
+      .defaultValue(120)
+      .markAdvanced()
+      .sinceVersion("0.14.2")
+      .withDocumentation("Expiration of file slice cache entries when " + ENABLE_FILE_SLICE_CACHE_OPTIMIZATION.key() + " is enabled");
+
+
   /**
    * Config key with boolean value that indicates whether record being written during MERGE INTO Spark SQL
    * operation are already prepped.
@@ -2831,6 +2853,18 @@ public class HoodieWriteConfig extends HoodieConfig {
     return getBoolean(ENABLE_TIMESTAMP_ORDERING_VALIDATION);
   }
 
+  public Boolean shouldEnableFileSliceCacheOptimization() {
+    return getBoolean(ENABLE_FILE_SLICE_CACHE_OPTIMIZATION);
+  }
+
+  public Integer getFileSliceCacheMaxSize() {
+    return getInt(FILE_SLICE_CACHE_MAX_SIZE);
+  }
+
+  public Integer getFileSliceCacheExpirationInMins() {
+    return getInt(FILE_SLICE_CACHE_EXPIRATION_MINS);
+  }
+
   public static class Builder {
 
     protected final HoodieWriteConfig writeConfig = new HoodieWriteConfig();
@@ -3377,6 +3411,21 @@ public class HoodieWriteConfig extends HoodieConfig {
 
     public Builder withConcatHandleClassName(String className) {
       writeConfig.setValue(CONCAT_HANDLE_CLASS_NAME, className);
+      return this;
+    }
+
+    public Builder withEnableFileSliceCacheOptimization(boolean enableFileSliceCacheOpt) {
+      writeConfig.setValue(ENABLE_FILE_SLICE_CACHE_OPTIMIZATION, Boolean.toString(enableFileSliceCacheOpt));
+      return this;
+    }
+
+    public Builder withFileSliceCacheMaxSize(Integer fileSliceCacheMaxSize) {
+      writeConfig.setValue(FILE_SLICE_CACHE_MAX_SIZE, Integer.toString(fileSliceCacheMaxSize));
+      return this;
+    }
+
+    public Builder withFileSliceCacheExpirationInMins(Integer fileSliceCacheExpirationInMins) {
+      writeConfig.setValue(FILE_SLICE_CACHE_EXPIRATION_MINS, Integer.toString(fileSliceCacheExpirationInMins));
       return this;
     }
 
