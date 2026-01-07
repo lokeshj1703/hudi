@@ -110,7 +110,7 @@ public class HoodieMetadataWriteUtils {
         .withMetadataConfig(HoodieMetadataConfig.newBuilder().enable(false).withFileListingParallelism(writeConfig.getFileListingParallelism()).build())
         .withAutoCommit(true)
         .withAvroSchemaValidate(false)
-        .withEmbeddedTimelineServerEnabled(false)
+        .withEmbeddedTimelineServerEnabled(writeConfig.getMetadataConfig().isEmbeddedTimelineServerEnabled())
         .withMarkersType(MarkerType.DIRECT.name())
         .withRollbackUsingMarkers(false)
         .withPath(HoodieTableMetadata.getMetadataTableBasePath(writeConfig.getBasePath()))

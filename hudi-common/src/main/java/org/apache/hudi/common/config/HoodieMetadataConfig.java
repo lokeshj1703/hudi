@@ -26,6 +26,7 @@ import org.apache.hudi.exception.HoodieNotSupportedException;
 import org.apache.hudi.io.storage.FilePreFetcher;
 
 import javax.annotation.concurrent.Immutable;
+
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
@@ -63,6 +64,16 @@ public final class HoodieMetadataConfig extends HoodieConfig {
       .withDocumentation("Enable the internal metadata table which serves table metadata like level file listings");
 
   public static final boolean DEFAULT_METADATA_ENABLE_FOR_READERS = false;
+
+  public static final ConfigProperty<String> EMBEDDED_TIMELINE_SERVER_ENABLE = ConfigProperty
+      .key(METADATA_PREFIX + ".embed.timeline.server.enable")
+      .defaultValue("false")
+      .markAdvanced()
+      .sinceVersion("1.2.0")
+      .withDocumentation("When true, spins up an instance of the timeline server "
+          + "(meta server that serves cached file listings, statistics), running on "
+          + "each writer's driver process, accepting requests during the write on "
+          + "the metadata table from executors.");
 
   // Enable metrics for internal Metadata Table
   public static final ConfigProperty<Boolean> METRICS_ENABLE = ConfigProperty
@@ -437,6 +448,10 @@ public final class HoodieMetadataConfig extends HoodieConfig {
 
   public boolean enabled() {
     return getBoolean(ENABLE);
+  }
+
+  public boolean isEmbeddedTimelineServerEnabled() {
+    return getBooleanOrDefault(EMBEDDED_TIMELINE_SERVER_ENABLE);
   }
 
   public boolean isBloomFilterIndexEnabled() {

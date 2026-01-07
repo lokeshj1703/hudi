@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -126,5 +127,41 @@ public class TestHoodieMetadataWriteUtils {
     assertTrue(metadataWriteConfig2.shouldEnableFileSliceCacheOptimization());
     assertEquals(10, metadataWriteConfig2.getFileSliceCacheMaxSize());
     assertEquals(20, metadataWriteConfig2.getFileSliceCacheExpirationInMins());
+  }
+
+  @Test
+  public void testEmbeddedTimelineServerConfig() {
+    // Test default (disabled)
+    HoodieWriteConfig writeConfigDefault = HoodieWriteConfig.newBuilder()
+        .withPath("/tmp")
+        .build();
+    HoodieWriteConfig metadataWriteConfigDefault = HoodieMetadataWriteUtils.createMetadataWriteConfig(
+        writeConfigDefault, HoodieFailedWritesCleaningPolicy.EAGER);
+    assertFalse(metadataWriteConfigDefault.isEmbeddedTimelineServerEnabled(),
+        "Embedded timeline server should be disabled by default for metadata table");
+
+    // Test with embedded timeline server enabled
+    Properties propertiesEnabled = new Properties();
+    propertiesEnabled.setProperty(HoodieMetadataConfig.EMBEDDED_TIMELINE_SERVER_ENABLE.key(), "true");
+    HoodieWriteConfig writeConfigEnabled = HoodieWriteConfig.newBuilder()
+        .withPath("/tmp")
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder().withProperties(propertiesEnabled).build())
+        .build();
+    HoodieWriteConfig metadataWriteConfigEnabled = HoodieMetadataWriteUtils.createMetadataWriteConfig(
+        writeConfigEnabled, HoodieFailedWritesCleaningPolicy.EAGER);
+    assertTrue(metadataWriteConfigEnabled.isEmbeddedTimelineServerEnabled(),
+        "Embedded timeline server should be enabled for metadata table when configured");
+
+    // Test with embedded timeline server explicitly disabled
+    Properties propertiesDisabled = new Properties();
+    propertiesDisabled.setProperty(HoodieMetadataConfig.EMBEDDED_TIMELINE_SERVER_ENABLE.key(), "false");
+    HoodieWriteConfig writeConfigDisabled = HoodieWriteConfig.newBuilder()
+        .withPath("/tmp")
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder().withProperties(propertiesDisabled).build())
+        .build();
+    HoodieWriteConfig metadataWriteConfigDisabled = HoodieMetadataWriteUtils.createMetadataWriteConfig(
+        writeConfigDisabled, HoodieFailedWritesCleaningPolicy.EAGER);
+    assertFalse(metadataWriteConfigDisabled.isEmbeddedTimelineServerEnabled(),
+        "Embedded timeline server should be disabled for metadata table when explicitly configured to false");
   }
 }
