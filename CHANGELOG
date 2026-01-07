@@ -1081,3 +1081,8 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 [ENG-35183] fix: Making cleaner rollback parallelism configurable with metadata table (#1659)
 [ENG-35708][CHERRYPICK] Fix Sonar report (#1662)
 [AUDIT-1071]: Changelog for release-v1.190.0 (#1655)
+
+--- [2026-01-07 03:12:48] [release-v1.192.0] ---
+[ENG-35183][CHERRYPICK] Guarding detailed metadata size metrics with a config (#1666)
+[ENG-35183][CHERRYPICK] Adding latest file slice cache for metadata table writes (#1660)
+[AUDIT-2065]: Changelog for release-v1.191.0 (#1664)
