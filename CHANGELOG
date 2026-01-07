@@ -1086,3 +1086,8 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 [ENG-35183][CHERRYPICK] Guarding detailed metadata size metrics with a config (#1666)
 [ENG-35183][CHERRYPICK] Adding latest file slice cache for metadata table writes (#1660)
 [AUDIT-2065]: Changelog for release-v1.191.0 (#1664)
+
+--- [2026-01-07 16:05:40] [release-v1.193.0] ---
+[ENG-35183][CHERRYPICK] Fixing test failure (#1671)
+[ENG-35793] test: Fix flaky test in TestHoodieClientMultiWriter (#1669)
+[AUDIT-2079]: Changelog for release-v1.192.0 (#1670)
