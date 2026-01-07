@@ -1091,3 +1091,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 [ENG-35183][CHERRYPICK] Fixing test failure (#1671)
 [ENG-35793] test: Fix flaky test in TestHoodieClientMultiWriter (#1669)
 [AUDIT-2079]: Changelog for release-v1.192.0 (#1670)
+
+--- [2026-01-07 19:25:00] [release-v1.194.0] ---
+[ENG-35810][CHERRYPICK] Allow embedded timeline server for metadata table writes (#1676)
+[AUDIT-1071]: Changelog for release-v1.193.0 (#1675)
