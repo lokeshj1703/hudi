@@ -50,6 +50,9 @@ public class LatestFileSliceCache {
     if (LATEST_FILE_SLICE_CACHE == null || INSTANT_TIME_CACHED == null || (!INSTANT_TIME_CACHED.equals(instantTime))) {
       synchronized (LatestFileSliceCache.class) {
         if (LATEST_FILE_SLICE_CACHE == null || INSTANT_TIME_CACHED == null || (!INSTANT_TIME_CACHED.equals(instantTime))) {
+          if (LATEST_FILE_SLICE_CACHE != null) {
+            LATEST_FILE_SLICE_CACHE.get().cleanUp();
+          }
           LOG.warn("Instantiating LatestFileSliceCache");
           LATEST_FILE_SLICE_CACHE = new AtomicReference<>(Caffeine.newBuilder()
               .maximumSize(maxCacheSize)

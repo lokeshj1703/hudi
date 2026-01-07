@@ -1329,7 +1329,9 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
     metadataMetaClient.reloadActiveTimeline();
 
     // Update total size of the metadata and count of base/log files
-    metrics.ifPresent(m -> m.updateSizeMetrics(metadataMetaClient, metadata, dataMetaClient.getTableConfig().getMetadataPartitions()));
+    if (metrics.isPresent() && metrics.get().shouldEnableDetailedMetadataMetrics()) {
+      metrics.get().updateSizeMetrics(metadataMetaClient, metadata, dataMetaClient.getTableConfig().getMetadataPartitions());
+    }
   }
 
   /**

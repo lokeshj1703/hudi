@@ -408,6 +408,13 @@ public final class HoodieMetadataConfig extends HoodieConfig {
       .sinceVersion("0.14.2")
       .withDocumentation("Expiration of file slice cache entries when " + ENABLE_FILE_SLICE_CACHE_OPTIMIZATION.key() + " is enabled");
 
+  public static final ConfigProperty<Boolean> ENABLE_DETAILED_METRICS = ConfigProperty
+      .key(METADATA_PREFIX + ".enable.detailed.metrics")
+      .defaultValue(false)
+      .markAdvanced()
+      .sinceVersion("0.14.2")
+      .withDocumentation("Enables detailed metadata table metrics");
+
   public long getMaxLogFileSize() {
     return getLong(MAX_LOG_FILE_SIZE_BYTES_PROP);
   }
@@ -578,6 +585,10 @@ public final class HoodieMetadataConfig extends HoodieConfig {
 
   public Integer getFileSliceCacheExpirationInMins() {
     return getInt(FILE_SLICE_CACHE_EXPIRATION_MINS);
+  }
+
+  public boolean shouldEnableDetailedMetrics() {
+    return getBoolean(ENABLE_DETAILED_METRICS);
   }
 
   public static class Builder {
@@ -760,6 +771,11 @@ public final class HoodieMetadataConfig extends HoodieConfig {
 
     public Builder withEnableFileSliceCacheOptimization(boolean shouldEnable) {
       metadataConfig.setValue(ENABLE_FILE_SLICE_CACHE_OPTIMIZATION, Boolean.toString(shouldEnable));
+      return this;
+    }
+
+    public Builder enableDetailedMetadataMetrics(boolean enableMetrics) {
+      metadataConfig.setValue(ENABLE_DETAILED_METRICS, String.valueOf(enableMetrics));
       return this;
     }
 

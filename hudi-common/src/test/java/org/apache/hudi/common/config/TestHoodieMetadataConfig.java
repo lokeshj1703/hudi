@@ -84,7 +84,6 @@ class TestHoodieMetadataConfig {
     assertEquals(100, configWithCustomValue.getFinalizeWritesParallelism());
 
     // Test zero value
-    Properties propsZero = new Properties();
     props = new Properties();
     props.put(HoodieMetadataConfig.CLEANER_PARALLELISM.key(), "0");
     props.put(HoodieMetadataConfig.ROLLBACK_PARALLELISM.key(), "0");
@@ -122,5 +121,29 @@ class TestHoodieMetadataConfig {
     assertTrue(config.shouldEnableFileSliceCacheOptimization());
     assertEquals(50, config.getFileSliceCacheMaxSize());
     assertEquals(10, config.getFileSliceCacheExpirationInMins());
+  }
+
+  @Test
+  void testMetricsConfig() {
+    // Test default value
+    HoodieMetadataConfig config = HoodieMetadataConfig.newBuilder().build();
+    assertFalse(config.enableMetrics());
+
+    Properties props = new Properties();
+    props.put(HoodieMetadataConfig.METRICS_ENABLE.key(), true);
+    config = HoodieMetadataConfig.newBuilder()
+        .fromProperties(props)
+        .build();
+    assertTrue(config.enableMetrics());
+    assertFalse(config.shouldEnableDetailedMetrics());
+
+    props = new Properties();
+    props.put(HoodieMetadataConfig.METRICS_ENABLE.key(), true);
+    props.put(HoodieMetadataConfig.ENABLE_DETAILED_METRICS.key(), true);
+    config = HoodieMetadataConfig.newBuilder()
+        .fromProperties(props)
+        .build();
+    assertTrue(config.enableMetrics());
+    assertTrue(config.shouldEnableDetailedMetrics());
   }
 }
