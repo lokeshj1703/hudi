@@ -18,6 +18,7 @@
 
 package org.apache.hudi.common.table;
 
+import org.apache.hudi.common.model.HoodieTableType;
 import org.apache.hudi.common.testutils.HoodieCommonTestHarness;
 import org.apache.hudi.common.util.CollectionUtils;
 import org.apache.hudi.exception.HoodieIOException;
@@ -30,6 +31,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
@@ -62,6 +64,8 @@ public class TestHoodieTableConfig extends HoodieCommonTestHarness {
     fs = new Path(basePath).getFileSystem(new Configuration());
     metaPath = new Path(basePath, HoodieTableMetaClient.METAFOLDER_NAME);
     Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.VERSION.key(),
+        String.valueOf(HoodieTableVersion.current().versionCode()));
     props.setProperty(HoodieTableConfig.NAME.key(), "test-table");
     HoodieTableConfig.create(fs, metaPath, props);
     cfgPath = new Path(metaPath, HoodieTableConfig.HOODIE_PROPERTIES_FILE);
@@ -77,7 +81,7 @@ public class TestHoodieTableConfig extends HoodieCommonTestHarness {
   public void testCreate() throws IOException {
     assertTrue(fs.exists(new Path(metaPath, HoodieTableConfig.HOODIE_PROPERTIES_FILE)));
     HoodieTableConfig config = new HoodieTableConfig(fs, metaPath.toString(), null, null);
-    assertEquals(6, config.getProps().size());
+    assertEquals(7, config.getProps().size());
   }
 
   @Test
@@ -90,7 +94,7 @@ public class TestHoodieTableConfig extends HoodieCommonTestHarness {
     assertTrue(fs.exists(cfgPath));
     assertFalse(fs.exists(backupCfgPath));
     HoodieTableConfig config = new HoodieTableConfig(fs, metaPath.toString(), null, null);
-    assertEquals(7, config.getProps().size());
+    assertEquals(8, config.getProps().size());
     assertEquals("test-table2", config.getTableName());
     assertEquals("new_field", config.getPreCombineField());
   }
@@ -103,7 +107,7 @@ public class TestHoodieTableConfig extends HoodieCommonTestHarness {
     assertTrue(fs.exists(cfgPath));
     assertFalse(fs.exists(backupCfgPath));
     HoodieTableConfig config = new HoodieTableConfig(fs, metaPath.toString(), null, null);
-    assertEquals(5, config.getProps().size());
+    assertEquals(6, config.getProps().size());
     assertNull(config.getProps().getProperty("hoodie.invalid.config"));
     assertFalse(config.getProps().contains(HoodieTableConfig.ARCHIVELOG_FOLDER.key()));
   }
@@ -127,7 +131,7 @@ public class TestHoodieTableConfig extends HoodieCommonTestHarness {
     assertFalse(fs.exists(cfgPath));
     assertTrue(fs.exists(backupCfgPath));
     config = new HoodieTableConfig(fs, metaPath.toString(), null, null);
-    assertEquals(6, config.getProps().size());
+    assertEquals(7, config.getProps().size());
   }
 
   @ParameterizedTest
@@ -145,7 +149,7 @@ public class TestHoodieTableConfig extends HoodieCommonTestHarness {
     assertTrue(fs.exists(cfgPath));
     assertFalse(fs.exists(backupCfgPath));
     config = new HoodieTableConfig(fs, metaPath.toString(), null, null);
-    assertEquals(6, config.getProps().size());
+    assertEquals(7, config.getProps().size());
   }
 
   @Test
@@ -160,6 +164,8 @@ public class TestHoodieTableConfig extends HoodieCommonTestHarness {
 
     // Should return backup config if hoodie.properties is corrupted
     Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.VERSION.key(),
+        String.valueOf(HoodieTableVersion.current().versionCode()));
     try (FSDataOutputStream out = fs.create(cfgPath)) {
       props.store(out, "No checksum in file so is invalid");
     }
@@ -194,5 +200,58 @@ public class TestHoodieTableConfig extends HoodieCommonTestHarness {
     updaterFuture.get();
     readerFuture.get();
     executor.shutdown();
+  }
+
+  /**
+   * Tests that table config can be loaded for older table versions (0-3) without checksum,
+   * and that table config loading fails for newer table versions (4+) without checksum.
+   * Checksum was introduced in table version 4 (0.11.0).
+   */
+  @ParameterizedTest
+  @EnumSource(value = HoodieTableVersion.class)
+  void testLoadTableConfigWithoutChecksum(HoodieTableVersion version) throws IOException {
+    fs.delete(cfgPath, false);
+
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "test-table");
+    props.setProperty(HoodieTableConfig.TYPE.key(), HoodieTableType.COPY_ON_WRITE.name());
+    props.setProperty(HoodieTableConfig.VERSION.key(), String.valueOf(version.versionCode()));
+
+    try (FSDataOutputStream out = fs.create(cfgPath)) {
+      props.store(out, "Table config without checksum for version " + version.versionCode());
+    }
+
+    if (version.compareTo(HoodieTableVersion.FOUR) < 0) {
+      HoodieTableConfig config = new HoodieTableConfig(fs, metaPath.toString(), null, null);
+      assertEquals("test-table", config.getTableName());
+      assertEquals(version, config.getTableVersion());
+    } else {
+      assertThrows(IllegalArgumentException.class, () -> {
+        new HoodieTableConfig(fs, metaPath.toString(), null, null);
+      });
+    }
+  }
+
+  /**
+   * Tests that hasValidChecksum correctly handles properties without checksum.
+   */
+  @Test
+  public void testValidateChecksumWithoutChecksumProperty() {
+    Properties propsOldVersion = new Properties();
+    propsOldVersion.setProperty(HoodieTableConfig.NAME.key(), "test-table");
+    propsOldVersion.setProperty(HoodieTableConfig.VERSION.key(), "3");
+    assertFalse(HoodieTableConfig.shouldValidateChecksum(propsOldVersion));
+    assertFalse(HoodieTableConfig.hasValidChecksum(propsOldVersion));
+
+    Properties propsNewVersion = new Properties();
+    propsNewVersion.setProperty(HoodieTableConfig.NAME.key(), "test-table");
+    propsNewVersion.setProperty(HoodieTableConfig.VERSION.key(), "4");
+    assertTrue(HoodieTableConfig.shouldValidateChecksum(propsNewVersion));
+    assertFalse(HoodieTableConfig.hasValidChecksum(propsNewVersion));
+
+    Properties propsNoVersion = new Properties();
+    propsNoVersion.setProperty(HoodieTableConfig.NAME.key(), "test-table");
+    assertFalse(HoodieTableConfig.shouldValidateChecksum(propsNoVersion));
+    assertFalse(HoodieTableConfig.hasValidChecksum(propsNoVersion));
   }
 }

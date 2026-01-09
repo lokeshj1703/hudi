@@ -315,7 +315,7 @@ public class HoodieTableConfig extends HoodieConfig {
    */
   private static String storeProperties(Properties props, FSDataOutputStream outputStream) throws IOException {
     final String checksum;
-    if (isValidChecksum(props)) {
+    if (props.containsKey(TABLE_CHECKSUM.key()) && hasValidChecksum(props)) {
       checksum = props.getProperty(TABLE_CHECKSUM.key());
       props.store(outputStream, "Updated at " + Instant.now());
     } else {
@@ -325,10 +325,6 @@ public class HoodieTableConfig extends HoodieConfig {
       props.setProperty(TABLE_CHECKSUM.key(), checksum);
     }
     return checksum;
-  }
-
-  private static boolean isValidChecksum(Properties props) {
-    return props.containsKey(TABLE_CHECKSUM.key()) && validateChecksum(props);
   }
 
   /**
@@ -352,7 +348,9 @@ public class HoodieTableConfig extends HoodieConfig {
           props.clear();
           props.load(is);
           found = true;
-          ValidationUtils.checkArgument(validateChecksum(props));
+          if (shouldValidateChecksum(props)) {
+            ValidationUtils.checkArgument(hasValidChecksum(props));
+          }
           return props;
         } catch (IOException e) {
           LOG.warn(String.format("Could not read properties from %s: %s", path, e));
@@ -509,8 +507,19 @@ public class HoodieTableConfig extends HoodieConfig {
     return BinaryUtil.generateChecksum(String.format(TABLE_CHECKSUM_FORMAT, database, table).getBytes(UTF_8));
   }
 
-  public static boolean validateChecksum(Properties props) {
+  public static boolean hasValidChecksum(Properties props) {
+    if (!props.containsKey(TABLE_CHECKSUM.key())) {
+      return false;
+    }
     return Long.parseLong(props.getProperty(TABLE_CHECKSUM.key())) == generateChecksum(props);
+  }
+
+  public static boolean shouldValidateChecksum(Properties props) {
+    // Checksum property was added in table version 4 (0.11.0).
+    // For older table versions (0-3), skip checksum validation.
+    return HoodieTableVersion.versionFromCode(Integer.parseInt(
+            props.getProperty(VERSION.key(), String.valueOf(VERSION.defaultValue().versionCode()))))
+        .compareTo(HoodieTableVersion.FOUR) >= 0;
   }
 
   /**
