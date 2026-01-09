@@ -1100,3 +1100,8 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 [ENG-35718][CHERRYPICK] fix: Fix table config loading on older table version (#1665)
 [ENG-35872][MINOR] fix flaky test (#1684)
 [AUDIT-2081]: Changelog for release-v1.194.0 (#1679)
+
+--- [2026-01-09 20:38:37] [release-v1.196.0] ---
+[ENG-35749] minor: Wiring in clean max commits to metadata table (#1667)
+[ENG-35824][CHERRYPICK] Add file slice cache for Record Level Index partition lookup (#1680)
+[AUDIT-1071]: Changelog for release-v1.195.0 (#1685)
