@@ -93,6 +93,7 @@ import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieMetadataException;
 import org.apache.hudi.index.HoodieIndex;
 import org.apache.hudi.io.storage.HoodieAvroHFileReader;
+import org.apache.hudi.keygen.constant.KeyGeneratorOptions;
 import org.apache.hudi.metadata.FileSystemBackedTableMetadata;
 import org.apache.hudi.metadata.HoodieBackedTableMetadata;
 import org.apache.hudi.metadata.HoodieBackedTableMetadataWriter;
@@ -161,6 +162,8 @@ import java.util.stream.Collectors;
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
+import static org.apache.hudi.common.config.HoodieMetadataConfig.PARTITIONED_RECORD_INDEX_MAX_FILE_GROUP_COUNT_PROP;
+import static org.apache.hudi.common.config.HoodieMetadataConfig.PARTITIONED_RECORD_INDEX_MIN_FILE_GROUP_COUNT_PROP;
 import static org.apache.hudi.common.config.LockConfiguration.FILESYSTEM_LOCK_PATH_PROP_KEY;
 import static org.apache.hudi.common.model.HoodieTableType.COPY_ON_WRITE;
 import static org.apache.hudi.common.model.HoodieTableType.MERGE_ON_READ;
@@ -3372,6 +3375,189 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
       assertEquals(allRecords.size(), result.size(), "RI should have mappings for re-inserted records");
       for (String reInsertedKey : keysToDelete) {
         assertEquals(reinsertTime, result.get(reInsertedKey).getInstantTime(), "RI mapping for re-inserted keys should have new commit time");
+      }
+    }
+  }
+
+  /**
+   * Test that verifies global RLI lookups work correctly when using the file slice cache.
+   *
+   * This test creates a table with global RLI enabled with multiple file groups (3),
+   * inserts records that distribute across file groups, then verifies that
+   * readRecordIndex returns all records correctly when the file slice cache is enabled.
+   *
+   * LatestFileSliceCacheForPartition.getCache() should return the file slices sorted
+   * by fileId, because RLI lookup uses the hash-based index (mapRecordKeyToFileGroupIndex)
+   * which assumes sorted file slices.
+   */
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  void testGlobalRLILookupWithFileSliceCacheConfig(boolean enableRliFileSliceCache) throws Exception {
+    init(COPY_ON_WRITE);
+    HoodieSparkEngineContext engineContext = new HoodieSparkEngineContext(jsc);
+
+    HoodieWriteConfig writeConfig = getWriteConfigBuilder(true, true, false)
+        .withIndexConfig(HoodieIndexConfig.newBuilder()
+            .withIndexType(HoodieIndex.IndexType.RECORD_INDEX)
+            .build())
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder()
+            .enable(true)
+            .withEnableRecordIndex(true)
+            .withRecordIndexFileGroupCount(3, 3)  // Multiple file groups to trigger sharding
+            .withEnableFileSliceCacheOptimizationForRliLookup(enableRliFileSliceCache)  // Enable the cache being tested
+            .build())
+        .build();
+
+    List<HoodieRecord> insertedRecords;
+    try (SparkRDDWriteClient client = new SparkRDDWriteClient(engineContext, writeConfig)) {
+      // Insert records that will distribute across multiple RLI file groups
+      String commitTime = HoodieActiveTimeline.createNewInstantTime();
+      insertedRecords = dataGen.generateInserts(commitTime, 100);
+      client.startCommitWithTime(commitTime);
+      List<WriteStatus> writeStatuses = client.insert(jsc.parallelize(insertedRecords, 1), commitTime).collect();
+      assertNoWriteErrors(writeStatuses);
+
+      // Verify RLI has 3 file groups
+      metaClient = HoodieTableMetaClient.reload(metaClient);
+      assertTrue(metaClient.getTableConfig().isMetadataPartitionAvailable(MetadataPartitionType.RECORD_INDEX));
+      HoodieBackedTableMetadata metadataReader = (HoodieBackedTableMetadata) metadata(client);
+      HoodieTableFileSystemView metadataFileSystemView = HoodieTableFileSystemView.fileListingBasedFileSystemView(
+          context, metadataReader.getMetadataMetaClient(), metadataReader.getMetadataMetaClient().getActiveTimeline());
+      List<FileSlice> rliFileSlices = HoodieTableMetadataUtil.getPartitionLatestFileSlices(
+          metadataReader.getMetadataMetaClient(), metadataFileSystemView,
+          MetadataPartitionType.RECORD_INDEX.getPartitionPath());
+      assertEquals(3, rliFileSlices.size(), "RLI should have 3 file groups");
+
+      // Verify records are distributed across multiple file groups (not all in one)
+      Map<Integer, Long> shardDistribution = insertedRecords.stream()
+          .map(HoodieRecord::getRecordKey)
+          .collect(Collectors.groupingBy(
+              key -> HoodieTableMetadataUtil.mapRecordKeyToFileGroupIndex(key, 3),
+              Collectors.counting()));
+      assertTrue(shardDistribution.size() > 1,
+          "Records should be distributed across multiple file groups, but got: " + shardDistribution);
+    }
+
+    // Use a HoodieTableMetadata implementation that uses a file system view which returns out-of-order files
+    try (HoodieTableMetadata metadataReader = new TestHoodieBackedMetadataWithOutOfOrderFiles(
+        engineContext, writeConfig.getMetadataConfig(), writeConfig.getBasePath())) {
+
+      List<String> recordKeys = insertedRecords.stream()
+          .map(HoodieRecord::getRecordKey)
+          .collect(Collectors.toList());
+
+      Map<String, HoodieRecordGlobalLocation> result = metadataReader.readRecordIndex(recordKeys);
+
+      // All records should be found
+      assertEquals(insertedRecords.size(), result.size(),
+          "RLI lookup should find ALL inserted records. If this fails, file slices may be unsorted "
+              + "causing lookups to search wrong file groups. Found: " + result.size()
+              + ", Expected: " + insertedRecords.size());
+
+      for (HoodieRecord dataRecord : insertedRecords) {
+        String recordKey = dataRecord.getRecordKey();
+        assertTrue(result.containsKey(recordKey),
+            "Record key '" + recordKey + "' should be found in RLI but was not. "
+                + "This indicates file slices may be unsorted in cache.");
+      }
+    }
+  }
+
+  /**
+   * Test that verifies partitioned RLI lookups work correctly when using the file slice cache.
+   *
+   * This test creates a table with partitioned RLI enabled with multiple file groups per partition,
+   * inserts records into multiple partitions, then verifies that readRecordIndex returns all records
+   * correctly when the file slice cache is enabled.
+   */
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  void testPartitionedRLILookupWithFileSliceCacheConfig(boolean enableRliFileSliceCache) throws Exception {
+    this.tableType = COPY_ON_WRITE;
+    initPath();
+    initSparkContexts("TestHoodieMetadata");
+    initFileSystem();
+    fs.mkdirs(new Path(basePath));
+    initTimelineService();
+
+    Properties tableProps = new Properties();
+    tableProps.setProperty(KeyGeneratorOptions.PARTITIONPATH_FIELD_NAME.key(), "partition_path");
+    initMetaClient(COPY_ON_WRITE, tableProps);
+    initTestDataGenerator();
+    metadataTableBasePath = HoodieTableMetadata.getMetadataTableBasePath(basePath);
+
+    HoodieSparkEngineContext engineContext = new HoodieSparkEngineContext(jsc);
+
+    int numFileGroups = 3;
+    Properties metadataProps = new Properties();
+    metadataProps.setProperty(HoodieMetadataConfig.PARTITIONED_RECORD_INDEX_ENABLE_PROP.key(), "true");
+    metadataProps.setProperty(PARTITIONED_RECORD_INDEX_MIN_FILE_GROUP_COUNT_PROP.key(), String.valueOf(numFileGroups));
+    metadataProps.setProperty(PARTITIONED_RECORD_INDEX_MAX_FILE_GROUP_COUNT_PROP.key(), String.valueOf(numFileGroups));
+    HoodieWriteConfig writeConfig = getWriteConfigBuilder(true, true, false)
+        .withIndexConfig(HoodieIndexConfig.newBuilder()
+            .withIndexType(HoodieIndex.IndexType.PARTITIONED_RECORD_INDEX)
+            .build())
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder()
+            .enable(true)
+            .withEnableFileSliceCacheOptimizationForRliLookup(enableRliFileSliceCache)  // Enable the cache being tested
+            .withProperties(metadataProps)  // Enable partitioned RLI
+            .build())
+        .build();
+
+    List<HoodieRecord> allInsertedRecords = new ArrayList<>();
+    try (SparkRDDWriteClient client = new SparkRDDWriteClient(engineContext, writeConfig)) {
+      // Insert records into each of the three default partitions
+      String commitTime = HoodieActiveTimeline.createNewInstantTime();
+      for (String partitionPath : dataGen.getPartitionPaths()) {
+        List<HoodieRecord> partitionRecords = dataGen.generateInsertsForPartition(commitTime, 30, partitionPath);
+        allInsertedRecords.addAll(partitionRecords);
+      }
+      client.startCommitWithTime(commitTime);
+      List<WriteStatus> writeStatuses = client.insert(jsc.parallelize(allInsertedRecords, 1), commitTime).collect();
+      assertNoWriteErrors(writeStatuses);
+
+      // Verify RLI is initialized
+      metaClient = HoodieTableMetaClient.reload(metaClient);
+      assertTrue(metaClient.getTableConfig().isMetadataPartitionAvailable(MetadataPartitionType.RECORD_INDEX));
+    }
+
+    // Use a HoodieTableMetadata implementation that uses a file system view which returns out-of-order files
+    try (HoodieTableMetadata metadataReader = new TestHoodieBackedMetadataWithOutOfOrderFiles(
+        engineContext, writeConfig.getMetadataConfig(), writeConfig.getBasePath())) {
+
+      // Group record keys by their data table partition path and shard ID (for partitioned RLI)
+      // Each partition has numFileGroups shards, so we group by (partitionPath, shardId)
+      Map<String, Map<Integer, List<String>>> recordKeysByPartitionAndShard = allInsertedRecords.stream()
+          .collect(Collectors.groupingBy(
+              HoodieRecord::getPartitionPath,
+              Collectors.groupingBy(
+                  e -> HoodieTableMetadataUtil.mapRecordKeyToFileGroupIndex(e.getRecordKey(), numFileGroups),
+                  Collectors.mapping(HoodieRecord::getRecordKey, Collectors.toList()))));
+
+      // Verify we have records in all three partitions
+      assertEquals(dataGen.getPartitionPaths().length, recordKeysByPartitionAndShard.size(),
+          "Records should be distributed across all partitions");
+
+      // Perform batch lookups, one for each (partition, shard) combination
+      Map<String, HoodieRecordGlobalLocation> result = new HashMap<>();
+      for (String partitionPath : recordKeysByPartitionAndShard.keySet()) {
+        Map<Integer, List<String>> shardToRecordKeys = recordKeysByPartitionAndShard.get(partitionPath);
+        for (Integer shardId : shardToRecordKeys.keySet()) {
+          List<String> shardRecordKeys = shardToRecordKeys.get(shardId);
+          Map<String, HoodieRecordGlobalLocation> shardResult = metadataReader.readRecordIndex(shardRecordKeys, Option.of(partitionPath));
+          result.putAll(shardResult);
+        }
+      }
+
+      // All records should be found
+      assertEquals(allInsertedRecords.size(), result.size(),
+          "Partitioned RLI lookup should find ALL inserted records. Found: " + result.size()
+              + ", Expected: " + allInsertedRecords.size());
+
+      for (HoodieRecord dataRecord : allInsertedRecords) {
+        String recordKey = dataRecord.getRecordKey();
+        assertTrue(result.containsKey(recordKey),
+            "Record key '" + recordKey + "' should be found in partitioned RLI but was not.");
       }
     }
   }

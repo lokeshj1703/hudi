@@ -426,6 +426,13 @@ public final class HoodieMetadataConfig extends HoodieConfig {
       .sinceVersion("0.14.2")
       .withDocumentation("Enables detailed metadata table metrics");
 
+  public static final ConfigProperty<Boolean> ENABLE_FILE_SLICE_CACHE_OPTIMIZATION_RLI_LOOKUP = ConfigProperty
+      .key(METADATA_PREFIX + ".file.slice.cache.optimization.rli.lookup")
+      .defaultValue(false)
+      .markAdvanced()
+      .sinceVersion("0.14.2")
+      .withDocumentation("Enables cache for fetching latest file slice view for RLI lookup. Would help RECORD_INDEX lookups in MDT");
+
   public long getMaxLogFileSize() {
     return getLong(MAX_LOG_FILE_SIZE_BYTES_PROP);
   }
@@ -604,6 +611,10 @@ public final class HoodieMetadataConfig extends HoodieConfig {
 
   public boolean shouldEnableDetailedMetrics() {
     return getBoolean(ENABLE_DETAILED_METRICS);
+  }
+
+  public boolean shouldEnableFileSliceCacheOptimizationForRliLookup() {
+    return getBoolean(ENABLE_FILE_SLICE_CACHE_OPTIMIZATION_RLI_LOOKUP);
   }
 
   public static class Builder {
@@ -791,6 +802,11 @@ public final class HoodieMetadataConfig extends HoodieConfig {
 
     public Builder enableDetailedMetadataMetrics(boolean enableMetrics) {
       metadataConfig.setValue(ENABLE_DETAILED_METRICS, String.valueOf(enableMetrics));
+      return this;
+    }
+
+    public Builder withEnableFileSliceCacheOptimizationForRliLookup(boolean shouldEnable) {
+      metadataConfig.setValue(ENABLE_FILE_SLICE_CACHE_OPTIMIZATION_RLI_LOOKUP, Boolean.toString(shouldEnable));
       return this;
     }
 

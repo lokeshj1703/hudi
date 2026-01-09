@@ -50,6 +50,7 @@ import org.apache.hudi.internal.schema.Types;
 import org.apache.hudi.io.storage.HoodieSeekingFileReader;
 import org.apache.hudi.util.Transient;
 
+import com.github.benmanes.caffeine.cache.Cache;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.hadoop.fs.FileStatus;
@@ -249,27 +250,56 @@ public class HoodieBackedTableMetadata extends BaseTableMetadata {
     Map<String, HoodieRecord<HoodieMetadataPayload>> result;
 
     // Load the file slices for the partition. Each file slice is a shard which saves a portion of the keys.
-    List<FileSlice> partitionFileSlices = partitionFileSliceMap.computeIfAbsent(partitionName,
-        k -> HoodieTableMetadataUtil.getPartitionLatestMergedFileSlices(metadataMetaClient, getMetadataFileSystemView(), partitionName));
+    // IMPORTANT: the file slices must be sorted by file ID for correct lookup
+    List<FileSlice> sortedPartitionFileSlices = partitionFileSliceMap.computeIfAbsent(partitionName,
+        k ->  {
+          HoodieTableFileSystemView mdtFSV = getMetadataFileSystemView();
+          String latestInstantTime = null;
+          if (metadataMetaClient.getActiveTimeline().filterCompletedInstants().lastInstant().isPresent()) {
+            latestInstantTime = metadataMetaClient.getActiveTimeline().filterCompletedInstants().lastInstant().get().getTimestamp();
+          } else {
+            // for fresh table return right away.
+            return Collections.emptyList();
+          }
+
+          long startTime = System.currentTimeMillis();
+          List<FileSlice> toReturn = null;
+          if (metadataConfig.shouldEnableFileSliceCacheOptimizationForRliLookup() && partitionName.equals(RECORD_INDEX.getPartitionPath())) {
+            Cache<LatestFileSliceCacheForPartition.CacheKey, List<FileSlice>> latestFileSliceCacheForPartition = LatestFileSliceCacheForPartition
+                .getCache(mdtFSV, LatestFileSliceCacheForPartition.CacheKey.of(latestInstantTime, partitionName),
+                    metadataConfig.getFileSliceCacheMaxSize(), metadataConfig.getFileSliceCacheExpirationInMins());
+            toReturn = latestFileSliceCacheForPartition.get(
+                LatestFileSliceCacheForPartition.CacheKey.of(latestInstantTime, partitionName),
+                e -> HoodieTableMetadataUtil.getPartitionLatestMergedFileSlices(metadataMetaClient, mdtFSV, partitionName));
+            LOG.info("Total time to fetch latest file slice for partition {} and instant time {} potentially cached : {} ms",
+                partitionName, latestInstantTime, (System.currentTimeMillis() - startTime));
+          } else {
+            toReturn = HoodieTableMetadataUtil.getPartitionLatestMergedFileSlices(metadataMetaClient, mdtFSV, partitionName);
+            LOG.info("Total time to fetch latest file slice for partition {} and instant time {} without caching : {} ms",
+                partitionName, latestInstantTime, (System.currentTimeMillis() - startTime));
+          }
+          return toReturn;
+        });
     if (dataTablePartition.isPresent()) {
       //assume is partitioned rli if a data table partition name is provided
       //filter to only the files in the partition
-      partitionFileSlices = partitionFileSlices.stream()
+      sortedPartitionFileSlices = sortedPartitionFileSlices.stream()
           .filter(fileSlice -> HoodieTableMetadataUtil.getDataTablePartitionNameFromFileGroupName(fileSlice.getFileId()).equals(dataTablePartition.get()))
           .collect(Collectors.toList());
       // all keys will be from the same shard index so just calculate the first key and reduce partitionFileSlices to 1
-      int fileGroupIndex = HoodieTableMetadataUtil.mapRecordKeyToFileGroupIndex(keys.get(0), partitionFileSlices.size());
-      partitionFileSlices = Collections.singletonList(partitionFileSlices.get(fileGroupIndex));
-    } else if (partitionName.equals(RECORD_INDEX.getPartitionPath()) && !partitionFileSlices.isEmpty() && HoodieTableMetadataUtil.verifyRLIFile(partitionFileSlices.get(0).getFileId(), true)) {
+      int fileGroupIndex = HoodieTableMetadataUtil.mapRecordKeyToFileGroupIndex(keys.get(0), sortedPartitionFileSlices.size());
+      sortedPartitionFileSlices = Collections.singletonList(sortedPartitionFileSlices.get(fileGroupIndex));
+    } else if (partitionName.equals(RECORD_INDEX.getPartitionPath()) && !sortedPartitionFileSlices.isEmpty()
+        && HoodieTableMetadataUtil.verifyRLIFile(sortedPartitionFileSlices.get(0).getFileId(), true)) {
       throw new IllegalArgumentException("File pruning with partitioned rli has not yet been implemented");
     }
-    final int numFileSlices = partitionFileSlices.size();
+    final int numFileSlices = sortedPartitionFileSlices.size();
     ValidationUtils.checkState(numFileSlices > 0, "Number of file slices for partition " + partitionName + " should be > 0");
 
     // Lookup keys from each file slice
     if (numFileSlices == 1) {
       // Optimization for a single slice for smaller metadata table partitions
-      result = lookupKeysFromFileSlice(partitionName, keys, partitionFileSlices.get(0));
+      result = lookupKeysFromFileSlice(partitionName, keys, sortedPartitionFileSlices.get(0));
     } else {
       // Parallel lookup for large sized partitions with many file slices
       // Partition the keys by the file slice which contains it
@@ -284,13 +314,13 @@ public class HoodieBackedTableMetadata extends BaseTableMetadata {
 
       result = new HashMap<>(keys.size());
       getEngineContext().setJobStatus(this.getClass().getSimpleName(), "Reading keys from metadata table partition " + partitionName);
-      List<FileSlice> finalPartitionFileSlices = partitionFileSlices;
+      List<FileSlice> finalSortedPartitionFileSlices = sortedPartitionFileSlices;
       getEngineContext().map(partitionedKeys, keysList -> {
         if (keysList.isEmpty()) {
           return Collections.<String, HoodieRecord<HoodieMetadataPayload>>emptyMap();
         }
         int shardIndex = HoodieTableMetadataUtil.mapRecordKeyToFileGroupIndex(keysList.get(0), numFileSlices);
-        return lookupKeysFromFileSlice(partitionName, keysList, finalPartitionFileSlices.get(shardIndex));
+        return lookupKeysFromFileSlice(partitionName, keysList, finalSortedPartitionFileSlices.get(shardIndex));
       }, partitionedKeys.size()).forEach(result::putAll);
     }
 

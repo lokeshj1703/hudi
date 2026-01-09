@@ -101,6 +101,7 @@ class TestHoodieMetadataConfig {
     // Test default value
     HoodieMetadataConfig config = HoodieMetadataConfig.newBuilder().build();
     assertFalse(config.shouldEnableFileSliceCacheOptimization());
+    assertFalse(config.shouldEnableFileSliceCacheOptimizationForRliLookup());
 
     Properties props = new Properties();
     props.put(HoodieMetadataConfig.ENABLE_FILE_SLICE_CACHE_OPTIMIZATION.key(), true);
@@ -108,6 +109,7 @@ class TestHoodieMetadataConfig {
         .fromProperties(props)
         .build();
     assertTrue(config.shouldEnableFileSliceCacheOptimization());
+    assertFalse(config.shouldEnableFileSliceCacheOptimizationForRliLookup());
     assertEquals(HoodieMetadataConfig.FILE_SLICE_CACHE_MAX_SIZE.defaultValue(), config.getFileSliceCacheMaxSize());
     assertEquals(HoodieMetadataConfig.FILE_SLICE_CACHE_EXPIRATION_MINS.defaultValue(), config.getFileSliceCacheExpirationInMins());
 
@@ -121,6 +123,14 @@ class TestHoodieMetadataConfig {
     assertTrue(config.shouldEnableFileSliceCacheOptimization());
     assertEquals(50, config.getFileSliceCacheMaxSize());
     assertEquals(10, config.getFileSliceCacheExpirationInMins());
+
+    props = new Properties();
+    props.put(HoodieMetadataConfig.ENABLE_FILE_SLICE_CACHE_OPTIMIZATION_RLI_LOOKUP.key(), true);
+    config = HoodieMetadataConfig.newBuilder()
+        .fromProperties(props)
+        .build();
+    assertFalse(config.shouldEnableFileSliceCacheOptimization());
+    assertTrue(config.shouldEnableFileSliceCacheOptimizationForRliLookup());
   }
 
   @Test
