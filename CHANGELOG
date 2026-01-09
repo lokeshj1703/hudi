@@ -1095,3 +1095,8 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-01-07 19:25:00] [release-v1.194.0] ---
 [ENG-35810][CHERRYPICK] Allow embedded timeline server for metadata table writes (#1676)
 [AUDIT-1071]: Changelog for release-v1.193.0 (#1675)
+
+--- [2026-01-09 16:04:42] [release-v1.195.0] ---
+[ENG-35718][CHERRYPICK] fix: Fix table config loading on older table version (#1665)
+[ENG-35872][MINOR] fix flaky test (#1684)
+[AUDIT-2081]: Changelog for release-v1.194.0 (#1679)
