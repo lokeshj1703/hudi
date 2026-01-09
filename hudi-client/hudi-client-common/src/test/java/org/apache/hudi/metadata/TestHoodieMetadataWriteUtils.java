@@ -53,6 +53,7 @@ public class TestHoodieMetadataWriteUtils {
     // default value already greater than data cleaner commits retained * 1.2
     assertEquals(HoodieMetadataConfig.DEFAULT_METADATA_CLEANER_COMMITS_RETAINED, metadataWriteConfig1.getCleanerCommitsRetained());
     assertEquals(1000, metadataWriteConfig1.getCleanerParallelism());
+    assertEquals(1, metadataWriteConfig1.getCleaningMaxCommits());
 
     assertNotEquals(HoodieCleaningPolicy.KEEP_LATEST_FILE_VERSIONS, metadataWriteConfig1.getCleanerPolicy());
     assertNotEquals(HoodieCleaningPolicy.KEEP_LATEST_BY_HOURS, metadataWriteConfig1.getCleanerPolicy());
@@ -61,13 +62,15 @@ public class TestHoodieMetadataWriteUtils {
         .withPath("/tmp")
         .withCleanConfig(HoodieCleanConfig.newBuilder()
             .withCleanerPolicy(HoodieCleaningPolicy.KEEP_LATEST_COMMITS)
-            .retainCommits(20).build())
+            .retainCommits(20)
+            .withMaxCommitsBeforeCleaning(10).build())
         .build();
     HoodieWriteConfig metadataWriteConfig2 = HoodieMetadataWriteUtils.createMetadataWriteConfig(writeConfig2, HoodieFailedWritesCleaningPolicy.EAGER);
     assertEquals(HoodieFailedWritesCleaningPolicy.EAGER, metadataWriteConfig2.getFailedWritesCleanPolicy());
     assertEquals(HoodieCleaningPolicy.KEEP_LATEST_COMMITS, metadataWriteConfig2.getCleanerPolicy());
     // data cleaner commits retained * 1.2 is greater than default
     assertEquals(24, metadataWriteConfig2.getCleanerCommitsRetained());
+    assertEquals(10, metadataWriteConfig2.getCleaningMaxCommits());
   }
 
   @Test

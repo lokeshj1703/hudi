@@ -82,6 +82,7 @@ public class HoodieMetadataWriteUtils {
         .withAutoClean(false)
         .withCleanerParallelism(writeConfig.getMetadataConfig().getCleanerParallelism())
         .withFailedWritesCleaningPolicy(failedWritesCleaningPolicy)
+        .withMaxCommitsBeforeCleaning(writeConfig.getCleaningMaxCommits())
         .withCleanerPolicy(dataTableCleaningPolicy);
 
     if (HoodieCleaningPolicy.KEEP_LATEST_COMMITS.equals(dataTableCleaningPolicy)) {
