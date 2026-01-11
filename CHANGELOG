@@ -1109,3 +1109,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-01-10 06:17:48] [release-v1.197.0] ---
 [ENG-35908] perf: improve performance for S3 meta event source (#1678)
 [AUDIT-1071]: Changelog for release-v1.196.0 (#1686)
+
+--- [2026-01-11 20:36:58] [release-v1.198.0] ---
+[ENG-35913][CHERRYPICK] avoid loading new metaclient per scanner (#1689)
+[AUDIT-1071]: Changelog for release-v1.197.0 (#1688)
