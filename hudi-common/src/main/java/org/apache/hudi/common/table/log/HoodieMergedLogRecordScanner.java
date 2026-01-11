@@ -26,6 +26,7 @@ import org.apache.hudi.common.model.HoodiePreCombineAvroRecordMerger;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.model.HoodieRecord.HoodieRecordType;
 import org.apache.hudi.common.model.HoodieRecordMerger;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.cdc.HoodieCDCUtils;
 import org.apache.hudi.common.util.CollectionUtils;
 import org.apache.hudi.common.util.DefaultSizeEstimator;
@@ -91,7 +92,7 @@ public class HoodieMergedLogRecordScanner extends AbstractHoodieLogRecordReader
   private long totalTimeTakenToReadAndMergeBlocks;
 
   @SuppressWarnings("unchecked")
-  private HoodieMergedLogRecordScanner(FileSystem fs, String basePath, List<String> logFilePaths, Schema readerSchema,
+  private HoodieMergedLogRecordScanner(FileSystem fs, List<String> logFilePaths, Schema readerSchema,
                                        String latestInstantTime, Long maxMemorySizeInBytes, boolean readBlocksLazily,
                                        boolean reverseReader, int bufferSize, String spillableMapBasePath,
                                        Option<InstantRange> instantRange,
@@ -101,9 +102,10 @@ public class HoodieMergedLogRecordScanner extends AbstractHoodieLogRecordReader
                                        Option<String> partitionName,
                                        InternalSchema internalSchema,
                                        Option<String> keyFieldOverride,
-                                       boolean enableOptimizedLogBlocksScan, HoodieRecordMerger recordMerger) {
-    super(fs, basePath, logFilePaths, readerSchema, latestInstantTime, readBlocksLazily, reverseReader, bufferSize,
-        instantRange, withOperationField, forceFullScan, partitionName, internalSchema, keyFieldOverride, enableOptimizedLogBlocksScan, recordMerger);
+                                       boolean enableOptimizedLogBlocksScan, HoodieRecordMerger recordMerger,
+                                       HoodieTableMetaClient metaClient) {
+    super(fs, logFilePaths, readerSchema, latestInstantTime, readBlocksLazily, reverseReader, bufferSize,
+        instantRange, withOperationField, forceFullScan, partitionName, internalSchema, keyFieldOverride, enableOptimizedLogBlocksScan, recordMerger, metaClient);
     try {
       this.maxMemorySizeInBytes = maxMemorySizeInBytes;
       // Store merged records for all versions for this log file, set the in-memory footprint to maxInMemoryMapSize
@@ -312,7 +314,6 @@ public class HoodieMergedLogRecordScanner extends AbstractHoodieLogRecordReader
    */
   public static class Builder extends AbstractHoodieLogRecordReader.Builder {
     private FileSystem fs;
-    private String basePath;
     private List<String> logFilePaths;
     private Schema readerSchema;
     private InternalSchema internalSchema = InternalSchema.getEmptyInternalSchema();
@@ -335,16 +336,11 @@ public class HoodieMergedLogRecordScanner extends AbstractHoodieLogRecordReader
     private boolean forceFullScan = true;
     private boolean enableOptimizedLogBlocksScan = false;
     private HoodieRecordMerger recordMerger = HoodiePreCombineAvroRecordMerger.INSTANCE;
+    private HoodieTableMetaClient metaClient;
 
     @Override
     public Builder withFileSystem(FileSystem fs) {
       this.fs = fs;
-      return this;
-    }
-
-    @Override
-    public Builder withBasePath(String basePath) {
-      this.basePath = basePath;
       return this;
     }
 
@@ -451,18 +447,23 @@ public class HoodieMergedLogRecordScanner extends AbstractHoodieLogRecordReader
       return this;
     }
 
+    public Builder withMetaClient(HoodieTableMetaClient metaClient) {
+      this.metaClient = metaClient;
+      return this;
+    }
+
     @Override
     public HoodieMergedLogRecordScanner build() {
       if (this.partitionName == null && CollectionUtils.nonEmpty(this.logFilePaths)) {
-        this.partitionName = getRelativePartitionPath(new Path(basePath), new Path(this.logFilePaths.get(0)).getParent());
+        this.partitionName = getRelativePartitionPath(metaClient.getBasePathV2(), new Path(this.logFilePaths.get(0)).getParent());
       }
       ValidationUtils.checkArgument(recordMerger != null);
 
-      return new HoodieMergedLogRecordScanner(fs, basePath, logFilePaths, readerSchema,
+      return new HoodieMergedLogRecordScanner(fs, logFilePaths, readerSchema,
           latestInstantTime, maxMemorySizeInBytes, readBlocksLazily, reverseReader,
           bufferSize, spillableMapBasePath, instantRange,
           diskMapType, isBitCaskDiskMapCompressionEnabled, withOperationField, forceFullScan,
-          Option.ofNullable(partitionName), internalSchema, Option.ofNullable(keyFieldOverride), enableOptimizedLogBlocksScan, recordMerger);
+          Option.ofNullable(partitionName), internalSchema, Option.ofNullable(keyFieldOverride), enableOptimizedLogBlocksScan, recordMerger, metaClient);
     }
   }
 }

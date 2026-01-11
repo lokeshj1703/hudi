@@ -190,7 +190,7 @@ public abstract class HoodieCompactor<T, I, K, O> implements Serializable {
         .collect(toList());
     HoodieMergedLogRecordScanner scanner = HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(metaClient.getBasePath())
+        .withMetaClient(metaClient)
         .withLogFilePaths(logFiles)
         .withReaderSchema(readerSchema)
         .withLatestInstantTime(executionHelper.instantTimeToUseForScanning(instantTime, maxInstantTime))

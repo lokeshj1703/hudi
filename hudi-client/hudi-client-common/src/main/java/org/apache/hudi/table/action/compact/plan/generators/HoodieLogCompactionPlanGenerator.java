@@ -88,7 +88,7 @@ public class HoodieLogCompactionPlanGenerator<T extends HoodieRecordPayload, I, 
     HoodieTableMetaClient metaClient = hoodieTable.getMetaClient();
     HoodieUnMergedLogRecordScanner scanner = HoodieUnMergedLogRecordScanner.newBuilder()
         .withFileSystem(metaClient.getFs())
-        .withBasePath(hoodieTable.getMetaClient().getBasePath())
+        .withMetaClient(hoodieTable.getMetaClient())
         .withLogFilePaths(fileSlice.getLogFiles()
             .sorted(HoodieLogFile.getLogFileComparator())
             .map(file -> file.getPath().toString())

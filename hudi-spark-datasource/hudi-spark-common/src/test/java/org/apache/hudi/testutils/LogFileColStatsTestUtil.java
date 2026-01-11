@@ -58,7 +58,7 @@ public class LogFileColStatsTestUtil {
       List<HoodieRecord> records = new ArrayList<>();
       HoodieUnMergedLogRecordScanner scanner = HoodieUnMergedLogRecordScanner.newBuilder()
           .withFileSystem(datasetMetaClient.getFs())
-          .withBasePath(datasetMetaClient.getBasePath())
+          .withMetaClient(datasetMetaClient)
           .withLogFilePaths(Collections.singletonList(filePath))
           .withBufferSize(maxBufferSize)
           .withLatestInstantTime(latestCommitTime)

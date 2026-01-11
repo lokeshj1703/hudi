@@ -74,6 +74,7 @@ import org.apache.hudi.common.util.collection.Tuple3;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.exception.HoodieMetadataException;
+import org.apache.hudi.hadoop.CachingPath;
 import org.apache.hudi.io.storage.FilePreFetcher;
 import org.apache.hudi.io.storage.HoodieAvroHFileReader;
 import org.apache.hudi.io.storage.HoodieFileReader;
@@ -1167,7 +1168,7 @@ public class HoodieTableMetadataUtil {
       List<HoodieRecord> records = new ArrayList<>();
       HoodieUnMergedLogRecordScanner scanner = HoodieUnMergedLogRecordScanner.newBuilder()
           .withFileSystem(datasetMetaClient.getFs())
-          .withBasePath(datasetMetaClient.getBasePath())
+          .withMetaClient(datasetMetaClient)
           .withLogFilePaths(Collections.singletonList(filePath))
           .withBufferSize(maxBufferSize)
           .withLatestInstantTime(datasetMetaClient.getActiveTimeline().getCommitsTimeline().lastInstant().get().getTimestamp())
@@ -1417,12 +1418,18 @@ public class HoodieTableMetadataUtil {
     HoodieSeekingFileReader<?> baseFileReader = null;
     long baseFileOpenMs;
     // If the base file is present then create a reader
-    Option<HoodieBaseFile> basefile = slice.getBaseFile();
-    if (basefile.isPresent()) {
-      Path basePath = new Path(basefile.get().getPath());
+    Option<HoodieBaseFile> baseFileOpt = slice.getBaseFile();
+    if (baseFileOpt.isPresent()) {
+      HoodieBaseFile baseFile = slice.getBaseFile().get();
+      Path basePath = new CachingPath(baseFile.getPath());
       FileSystem fs = FSUtils.getFs(basePath, hadoopConf);
-      FileStatus fileStatus = fs.getFileStatus(basePath);
-      long fileLen = fileStatus.getLen();
+      long fileLen;
+      if (baseFile.getFileLen() > 0) {
+        fileLen = baseFile.getFileLen();
+      } else {
+        FileStatus fileStatus = fs.getFileStatus(basePath);
+        fileLen = fileStatus.getLen();
+      }
 
       if (fileLen <= (ConfigUtils.getIntWithAltKeys(hoodieProps, METADATA_FILE_PRE_FETCHER_THRESHOLD_SIZE_MB) * 1024L * 1024L)) {
         String fileFetcherClass = ConfigUtils.getStringWithAltKeys(hoodieProps, METADATA_FILE_PRE_FETCHER_IMPLEMENTATION, true);
@@ -1445,7 +1452,7 @@ public class HoodieTableMetadataUtil {
         baseFileReader = (HoodieSeekingFileReader<?>) HoodieFileReaderFactory.getReaderFactory(HoodieRecordType.AVRO).getFileReader(hadoopConf, basePath);
       }
       baseFileOpenMs = timer.endTimer();
-      LOG.info(String.format("Opened metadata base file from %s at instant %s in %d ms", basePath, basefile.get().getCommitTime(), baseFileOpenMs));
+      LOG.info(String.format("Opened metadata base file from %s at instant %s in %d ms", basePath, baseFile.getCommitTime(), baseFileOpenMs));
     } else {
       baseFileOpenMs = 0L;
       timer.endTimer();
@@ -1907,7 +1914,7 @@ public class HoodieTableMetadataUtil {
             .map(l -> l.getPath().toString()).collect(toList());
         HoodieMergedLogRecordScanner mergedLogRecordScanner = HoodieMergedLogRecordScanner.newBuilder()
             .withFileSystem(metaClient.getFs())
-            .withBasePath(basePath)
+            .withMetaClient(metaClient)
             .withLogFilePaths(logFilePaths)
             .withReaderSchema(HoodieAvroUtils.getRecordKeySchema())
             .withLatestInstantTime(metaClient.getActiveTimeline().filterCompletedInstants().lastInstant().map(HoodieInstant::getTimestamp).orElse(""))

@@ -131,7 +131,7 @@ public class HoodieMergedReadHandle<T, I, K, O> extends HoodieReadHandle<T, I, K
         .map(l -> l.getPath().toString()).collect(toList());
     return HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(hoodieTable.getMetaClient().getFs())
-        .withBasePath(hoodieTable.getMetaClient().getBasePathV2().toString())
+        .withMetaClient(hoodieTable.getMetaClient())
         .withLogFilePaths(logFilePaths)
         .withReaderSchema(readerSchema)
         .withLatestInstantTime(instantTime)

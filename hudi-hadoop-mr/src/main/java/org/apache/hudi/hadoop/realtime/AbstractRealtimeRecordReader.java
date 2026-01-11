@@ -69,7 +69,7 @@ public abstract class AbstractRealtimeRecordReader {
   private Schema readerSchema;
   private Schema writerSchema;
   private Schema hiveSchema;
-  private final HoodieTableMetaClient metaClient;
+  protected final HoodieTableMetaClient metaClient;
   protected SchemaEvolutionContext schemaEvolutionContext;
   // support merge operation
   protected boolean supportPayload;

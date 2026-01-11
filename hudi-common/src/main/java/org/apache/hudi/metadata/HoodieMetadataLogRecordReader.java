@@ -22,6 +22,7 @@ import org.apache.avro.Schema;
 import org.apache.hadoop.fs.FileSystem;
 
 import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.log.HoodieMergedLogRecordScanner;
 import org.apache.hudi.common.table.log.InstantRange;
 import org.apache.hudi.common.util.Option;
@@ -147,8 +148,8 @@ public class HoodieMetadataLogRecordReader implements Closeable {
       return this;
     }
 
-    public Builder withBasePath(String basePath) {
-      scannerBuilder.withBasePath(basePath);
+    public Builder withMetaClient(HoodieTableMetaClient metaClient) {
+      scannerBuilder.withMetaClient(metaClient);
       return this;
     }
 

@@ -30,6 +30,7 @@ import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.model.HoodieRecord.HoodieRecordType;
 import org.apache.hudi.common.model.HoodieRecordPayload;
 import org.apache.hudi.common.model.HoodieTableType;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.cdc.HoodieCDCSupplementalLoggingMode;
 import org.apache.hudi.common.table.cdc.HoodieCDCUtils;
 import org.apache.hudi.common.table.log.AppendResult;
@@ -765,9 +766,10 @@ public class TestHoodieLogFormat extends HoodieCommonTestHarness {
   }
 
   private void readAndValidate(Schema schema, String maxCommitTime, List<HoodieLogFile> logFiles, List<IndexedRecord> expectedRecords) throws IOException {
+    HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setBasePath(basePath).setConf(fs.getConf()).build();
     try (HoodieMergedLogRecordScanner scanner = HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(basePath)
+        .withMetaClient(metaClient)
         .withLogFilePaths(
             logFiles.stream()
                 .map(logFile -> logFile.getPath().toString()).collect(Collectors.toList()))
@@ -823,9 +825,10 @@ public class TestHoodieLogFormat extends HoodieCommonTestHarness {
 
     FileCreateUtils.createDeltaCommit(basePath, commitTime, fs);
     // scan all log blocks (across multiple log files)
+    HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setBasePath(basePath).setConf(fs.getConf()).build();
     HoodieMergedLogRecordScanner scanner = HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(basePath)
+        .withMetaClient(metaClient)
         .withLogFilePaths(
             allLogFilesList.stream()
                 .map(logFile -> logFile.getPath().toString()).collect(Collectors.toList()))
@@ -872,10 +875,11 @@ public class TestHoodieLogFormat extends HoodieCommonTestHarness {
 
     FileCreateUtils.createDeltaCommit(basePath, "100", fs);
 
+    HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setBasePath(basePath).setConf(fs.getConf()).build();
     // scan all log blocks (across multiple log files)
     HoodieMergedLogRecordScanner scanner = HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(basePath)
+        .withMetaClient(metaClient)
         .withLogFilePaths(
             logFiles.stream()
                 .map(logFile -> logFile.getPath().toString()).collect(Collectors.toList()))
@@ -963,9 +967,10 @@ public class TestHoodieLogFormat extends HoodieCommonTestHarness {
     FileCreateUtils.createDeltaCommit(basePath, "100", fs);
 
     // scan all log blocks (across multiple log files)
+    HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setBasePath(basePath).setConf(fs.getConf()).build();
     HoodieMergedLogRecordScanner scanner = HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(basePath)
+        .withMetaClient(metaClient)
         .withLogFilePaths(
             logFiles.stream()
                 .map(logFile -> logFile.getPath().toString()).collect(Collectors.toList()))
@@ -1463,9 +1468,10 @@ public class TestHoodieLogFormat extends HoodieCommonTestHarness {
     FileCreateUtils.createDeltaCommit(basePath, "101", fs);
     FileCreateUtils.createDeltaCommit(basePath, "102", fs);
 
+    HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setBasePath(basePath).setConf(fs.getConf()).build();
     HoodieMergedLogRecordScanner scanner = HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(basePath)
+        .withMetaClient(metaClient)
         .withLogFilePaths(allLogFiles)
         .withReaderSchema(schema)
         .withLatestInstantTime("102")
@@ -1513,7 +1519,7 @@ public class TestHoodieLogFormat extends HoodieCommonTestHarness {
     scanner.close();
     scanner = HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(basePath)
+        .withMetaClient(metaClient)
         .withLogFilePaths(allLogFiles)
         .withReaderSchema(schema)
         .withLatestInstantTime("103")
@@ -1619,9 +1625,10 @@ public class TestHoodieLogFormat extends HoodieCommonTestHarness {
     FileCreateUtils.createDeltaCommit(basePath, "102", fs);
 
     final List<String> readKeys = new ArrayList<>();
+    HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setBasePath(basePath).setConf(fs.getConf()).build();
     HoodieMergedLogRecordScanner scanner = HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(basePath)
+        .withMetaClient(metaClient)
         .withLogFilePaths(allLogFiles)
         .withReaderSchema(schema)
         .withLatestInstantTime("103")
@@ -1734,9 +1741,10 @@ public class TestHoodieLogFormat extends HoodieCommonTestHarness {
     FileCreateUtils.createDeltaCommit(basePath, "103", fs);
     FileCreateUtils.createDeltaCommit(basePath, "104", fs);
 
+    HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setBasePath(basePath).setConf(fs.getConf()).build();
     HoodieMergedLogRecordScanner scanner = HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(basePath)
+        .withMetaClient(metaClient)
         .withLogFilePaths(allLogFiles)
         .withReaderSchema(schema)
         .withLatestInstantTime("104")
@@ -2059,9 +2067,10 @@ public class TestHoodieLogFormat extends HoodieCommonTestHarness {
     FileCreateUtils.createDeltaCommit(basePath, "102", fs);
     FileCreateUtils.createDeltaCommit(basePath, "103", fs);
 
+    HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setBasePath(basePath).setConf(fs.getConf()).build();
     try (HoodieMergedLogRecordScanner scanner = HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(basePath)
+        .withMetaClient(metaClient)
         .withLogFilePaths(allLogFiles)
         .withReaderSchema(schema)
         .withLatestInstantTime("103")
@@ -2413,9 +2422,10 @@ public class TestHoodieLogFormat extends HoodieCommonTestHarness {
         FSUtils.getAllLogFiles(fs, partitionPath, "test-fileid1", HoodieLogFile.DELTA_EXTENSION, "100")
             .map(s -> s.getPath().toString()).collect(Collectors.toList());
 
+    HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setBasePath(basePath).setConf(fs.getConf()).build();
     HoodieMergedLogRecordScanner scanner = HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(basePath)
+        .withMetaClient(metaClient)
         .withLogFilePaths(allLogFiles)
         .withReaderSchema(schema)
         .withLatestInstantTime("108")
@@ -2504,7 +2514,7 @@ public class TestHoodieLogFormat extends HoodieCommonTestHarness {
 
       HoodieMergedLogRecordScanner scanner = HoodieMergedLogRecordScanner.newBuilder()
           .withFileSystem(fs)
-          .withBasePath(basePath)
+          .withMetaClient(metaClient)
           .withLogFilePaths(allLogFiles)
           .withReaderSchema(schema)
           .withLatestInstantTime("100")
@@ -3045,9 +3055,10 @@ public class TestHoodieLogFormat extends HoodieCommonTestHarness {
         FSUtils.getAllLogFiles(fs, partitionPath, "test-fileid1", HoodieLogFile.DELTA_EXTENSION, "100")
             .map(s -> s.getPath().toString()).collect(Collectors.toList());
 
+    HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setBasePath(basePath).setConf(fs.getConf()).build();
     HoodieMergedLogRecordScanner.Builder builder = HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(basePath)
+        .withMetaClient(metaClient)
         .withLogFilePaths(allLogFiles)
         .withReaderSchema(schema)
         .withLatestInstantTime(latestInstantTime)

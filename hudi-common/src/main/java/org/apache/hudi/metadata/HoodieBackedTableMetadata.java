@@ -512,7 +512,7 @@ public class HoodieBackedTableMetadata extends BaseTableMetadata {
     HoodieCommonConfig commonConfig = HoodieCommonConfig.newBuilder().fromProperties(metadataConfig.getProps()).build();
     HoodieMetadataLogRecordReader logRecordScanner = HoodieMetadataLogRecordReader.newBuilder()
         .withFileSystem(metadataMetaClient.getFs())
-        .withBasePath(metadataBasePath)
+        .withMetaClient(metadataMetaClient)
         .withLogFilePaths(sortedLogFilePaths)
         .withReaderSchema(schema)
         .withLatestInstantTime(latestMetadataInstantTime)

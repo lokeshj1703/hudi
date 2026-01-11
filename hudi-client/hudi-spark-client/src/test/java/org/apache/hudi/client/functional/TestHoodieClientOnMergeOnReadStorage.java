@@ -437,7 +437,7 @@ public class TestHoodieClientOnMergeOnReadStorage extends HoodieClientTestBase {
       fileSystemView.getLatestFileSlices(partitionPath).forEach(slice -> {
         HoodieUnMergedLogRecordScanner scanner = HoodieUnMergedLogRecordScanner.newBuilder()
             .withFileSystem(metaClient.getFs())
-            .withBasePath(table.getMetaClient().getBasePath())
+            .withMetaClient(table.getMetaClient())
             .withLogFilePaths(slice.getLogFiles()
                 .sorted(HoodieLogFile.getLogFileComparator())
                 .map(file -> file.getPath().toString())
@@ -450,7 +450,7 @@ public class TestHoodieClientOnMergeOnReadStorage extends HoodieClientTestBase {
         List<String> prevInstants = scanner.getValidBlockInstants();
         HoodieUnMergedLogRecordScanner scanner2 = HoodieUnMergedLogRecordScanner.newBuilder()
             .withFileSystem(metaClient.getFs())
-            .withBasePath(table.getMetaClient().getBasePath())
+            .withMetaClient(table.getMetaClient())
             .withLogFilePaths(slice.getLogFiles()
                 .sorted(HoodieLogFile.getLogFileComparator())
                 .map(file -> file.getPath().toString())

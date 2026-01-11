@@ -84,7 +84,7 @@ public class RealtimeCompactedRecordReader extends AbstractRealtimeRecordReader
     // readCommit() API)
     return HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(FSUtils.getFs(split.getPath().toString(), jobConf))
-        .withBasePath(split.getBasePath())
+        .withMetaClient(metaClient)
         .withLogFilePaths(split.getDeltaLogPaths())
         .withReaderSchema(getLogScannerReaderSchema())
         .withLatestInstantTime(split.getMaxCommitTime())

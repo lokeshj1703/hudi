@@ -1315,7 +1315,7 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
     }
     HoodieMetadataLogRecordReader logRecordReader = HoodieMetadataLogRecordReader.newBuilder()
         .withFileSystem(metadataMetaClient.getFs())
-        .withBasePath(metadataMetaClient.getBasePath())
+        .withMetaClient(metadataMetaClient)
         .withLogFilePaths(logFilePaths)
         .withLatestInstantTime(latestCommitTimestamp)
         .withPartition(FILES.getPartitionPath())

@@ -183,7 +183,7 @@ public class HoodieMergeOnReadSnapshotReader extends AbstractRealtimeRecordReade
   private HoodieMergedLogRecordScanner getMergedLogRecordScanner() {
     return HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(FSUtils.getFs(split.getPath().toString(), jobConf))
-        .withBasePath(tableBasePath)
+        .withMetaClient(metaClient)
         .withLogFilePaths(logFilePaths.stream().map(logFile -> logFile.getPath().toString()).collect(Collectors.toList()))
         .withReaderSchema(readerSchema)
         .withLatestInstantTime(latestInstantTime)

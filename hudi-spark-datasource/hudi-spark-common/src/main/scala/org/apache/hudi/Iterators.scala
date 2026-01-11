@@ -33,6 +33,7 @@ import org.apache.hudi.common.fs.FSUtils
 import org.apache.hudi.common.fs.FSUtils.{buildInlineConf, getRelativePartitionPath}
 import org.apache.hudi.common.model.HoodieRecord.HoodieRecordType
 import org.apache.hudi.common.model.{HoodieSparkRecord, _}
+import org.apache.hudi.common.table.HoodieTableMetaClient
 import org.apache.hudi.common.table.log.HoodieMergedLogRecordScanner
 import org.apache.hudi.common.util.HoodieRecordUtils
 import org.apache.hudi.config.HoodiePayloadConfig
@@ -42,6 +43,7 @@ import org.apache.hudi.internal.schema.InternalSchema
 import org.apache.hudi.metadata.HoodieTableMetadata.getDataTableBasePathFromMetadataTable
 import org.apache.hudi.metadata.{HoodieBackedTableMetadata, HoodieTableMetadata}
 import org.apache.hudi.util.CachingIterator
+
 import org.apache.spark.sql.HoodieCatalystExpressionUtils.generateUnsafeProjection
 import org.apache.spark.sql.HoodieInternalRowUtils
 import org.apache.spark.sql.catalyst.InternalRow
@@ -49,6 +51,7 @@ import org.apache.spark.sql.catalyst.expressions.Projection
 import org.apache.spark.sql.types.StructType
 
 import java.io.Closeable
+
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -376,7 +379,7 @@ object LogFileIterator extends SparkAdapterSupport {
     } else {
       val logRecordScannerBuilder = HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(tablePath)
+        .withMetaClient(HoodieTableMetaClient.builder().setConf(hadoopConf).setBasePath(tablePath).build())
         .withLogFilePaths(logFiles.map(logFile => logFile.getPath.toString).asJava)
         .withReaderSchema(logSchema)
         // NOTE: This part shall only be reached when at least one log is present in the file-group

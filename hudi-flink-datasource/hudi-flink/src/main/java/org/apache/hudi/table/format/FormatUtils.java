@@ -24,6 +24,7 @@ import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieOperation;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.model.HoodieRecordMerger;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.log.HoodieMergedLogRecordScanner;
 import org.apache.hudi.common.table.log.HoodieUnMergedLogRecordScanner;
 import org.apache.hudi.common.util.DefaultSizeEstimator;
@@ -157,7 +158,7 @@ public class FormatUtils {
     FileSystem fs = FSUtils.getFs(split.getTablePath(), hadoopConf);
     return HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(split.getTablePath())
+        .withMetaClient(HoodieTableMetaClient.builder().setBasePath(split.getTablePath()).setConf(hadoopConf).build())
         .withLogFilePaths(split.getLogPaths().get())
         .withReaderSchema(logSchema)
         .withInternalSchema(internalSchema)
@@ -199,7 +200,7 @@ public class FormatUtils {
           split.getTablePath(), EngineType.FLINK, mergers, flinkConf.getString(FlinkOptions.RECORD_MERGER_STRATEGY));
       HoodieUnMergedLogRecordScanner.Builder scannerBuilder = HoodieUnMergedLogRecordScanner.newBuilder()
           .withFileSystem(FSUtils.getFs(split.getTablePath(), hadoopConf))
-          .withBasePath(split.getTablePath())
+          .withMetaClient(HoodieTableMetaClient.builder().setBasePath(split.getTablePath()).setConf(hadoopConf).build())
           .withLogFilePaths(split.getLogPaths().get())
           .withReaderSchema(logSchema)
           .withInternalSchema(internalSchema)
@@ -264,7 +265,7 @@ public class FormatUtils {
     String basePath = writeConfig.getBasePath();
     return HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(FSUtils.getFs(basePath, hadoopConf))
-        .withBasePath(basePath)
+        .withMetaClient(HoodieTableMetaClient.builder().setBasePath(basePath).setConf(hadoopConf).build())
         .withLogFilePaths(logPaths)
         .withReaderSchema(logSchema)
         .withLatestInstantTime(latestInstantTime)

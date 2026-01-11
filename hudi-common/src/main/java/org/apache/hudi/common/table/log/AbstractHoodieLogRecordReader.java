@@ -148,7 +148,7 @@ public abstract class AbstractHoodieLogRecordReader {
   // Use scanV2 method.
   private final boolean enableOptimizedLogBlocksScan;
 
-  protected AbstractHoodieLogRecordReader(FileSystem fs, String basePath, List<String> logFilePaths,
+  protected AbstractHoodieLogRecordReader(FileSystem fs, List<String> logFilePaths,
                                           Schema readerSchema, String latestInstantTime, boolean readBlocksLazily,
                                           boolean reverseReader, int bufferSize, Option<InstantRange> instantRange,
                                           boolean withOperationField, boolean forceFullScan,
@@ -156,10 +156,11 @@ public abstract class AbstractHoodieLogRecordReader {
                                           InternalSchema internalSchema,
                                           Option<String> keyFieldOverride,
                                           boolean enableOptimizedLogBlocksScan,
-                                          HoodieRecordMerger recordMerger) {
+                                          HoodieRecordMerger recordMerger,
+                                          HoodieTableMetaClient metaClient) {
     this.readerSchema = readerSchema;
     this.latestInstantTime = latestInstantTime;
-    this.hoodieTableMetaClient = HoodieTableMetaClient.builder().setConf(fs.getConf()).setBasePath(basePath).build();
+    this.hoodieTableMetaClient = metaClient;
     // load class from the payload fully qualified class name
     HoodieTableConfig tableConfig = this.hoodieTableMetaClient.getTableConfig();
     this.payloadClassFQN = tableConfig.getPayloadClass();
@@ -869,8 +870,6 @@ public abstract class AbstractHoodieLogRecordReader {
 
     public abstract Builder withFileSystem(FileSystem fs);
 
-    public abstract Builder withBasePath(String basePath);
-
     public abstract Builder withLogFilePaths(List<String> logFilePaths);
 
     public abstract Builder withReaderSchema(Schema schema);
@@ -904,6 +903,8 @@ public abstract class AbstractHoodieLogRecordReader {
     public Builder withOptimizedLogBlocksScan(boolean enableOptimizedLogBlocksScan) {
       throw new UnsupportedOperationException();
     }
+
+    public abstract Builder withMetaClient(HoodieTableMetaClient metaClient);
 
     public abstract AbstractHoodieLogRecordReader build();
   }

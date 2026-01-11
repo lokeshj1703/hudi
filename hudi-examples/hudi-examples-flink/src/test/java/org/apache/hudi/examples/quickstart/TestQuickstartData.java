@@ -38,6 +38,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hudi.common.config.HoodieCommonConfig;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieAvroRecord;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.log.HoodieMergedLogRecordScanner;
 import org.apache.hudi.examples.quickstart.utils.QuickstartConfigurations;
 import org.apache.parquet.Strings;
@@ -349,7 +350,7 @@ public class TestQuickstartData {
       String instant) {
     return HoodieMergedLogRecordScanner.newBuilder()
         .withFileSystem(fs)
-        .withBasePath(basePath)
+        .withMetaClient(HoodieTableMetaClient.builder().setBasePath(basePath).setConf(fs.getConf()).build())
         .withLogFilePaths(logPaths)
         .withReaderSchema(readSchema)
         .withLatestInstantTime(instant)

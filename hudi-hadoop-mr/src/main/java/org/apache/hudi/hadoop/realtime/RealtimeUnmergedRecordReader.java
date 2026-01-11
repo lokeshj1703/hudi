@@ -77,7 +77,7 @@ class RealtimeUnmergedRecordReader extends AbstractRealtimeRecordReader
     HoodieUnMergedLogRecordScanner.Builder scannerBuilder =
         HoodieUnMergedLogRecordScanner.newBuilder()
           .withFileSystem(FSUtils.getFs(split.getPath().toString(), this.jobConf))
-          .withBasePath(split.getBasePath())
+          .withMetaClient(metaClient)
           .withLogFilePaths(split.getDeltaLogPaths())
           .withReaderSchema(getReaderSchema())
           .withLatestInstantTime(split.getMaxCommitTime())
