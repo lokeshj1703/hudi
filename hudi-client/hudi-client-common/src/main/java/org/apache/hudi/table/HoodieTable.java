@@ -838,6 +838,16 @@ public abstract class HoodieTable<T, I, K, O> implements Serializable {
         }
       }
     }
+    // Validate that write stats have non-zero operation counts
+    for (HoodieWriteStat stat : stats) {
+      if (stat.getNumWrites() == 0
+          && stat.getNumDeletes() == 0) {
+        throw new HoodieInconsistentMetadataException(
+            String.format("Inconsistent write stat found for commit %s: fileId=%s, path=%s, partition=%s. "
+                + "numWrites and numDeletes are both zero",
+                commitTime, stat.getFileId(), stat.getPath(), stat.getPartitionPath()));
+      }
+    }
   }
 
   @VisibleForTesting

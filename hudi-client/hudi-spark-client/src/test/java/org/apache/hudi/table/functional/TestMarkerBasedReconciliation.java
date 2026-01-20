@@ -127,6 +127,8 @@ public class TestMarkerBasedReconciliation extends HoodieClientTestBase {
         } else {
           stat.setPath(partitionPath + "/" + fileStatus.getPath().getName());
         }
+        stat.setNumWrites(1);
+        stat.setNumInserts(1);
         finalStats.add(stat);
       }
     });
@@ -165,6 +167,8 @@ public class TestMarkerBasedReconciliation extends HoodieClientTestBase {
         } else {
           stat.setPath(partitionPath + "/" + fileStatus.getPath().getName());
         }
+        stat.setNumWrites(1);
+        stat.setNumInserts(1);
         finalStats1.add(stat);
       }
     });
@@ -236,6 +240,8 @@ public class TestMarkerBasedReconciliation extends HoodieClientTestBase {
         HoodieWriteStat stat = new HoodieWriteStat();
         String partitionPath = fileStatus.getPath().getParent().getName();
         stat.setPath(partitionPath + "/" + fileStatus.getPath().getName());
+        stat.setNumWrites(1);
+        stat.setNumInserts(1);
         stats.add(stat);
       }
     });
@@ -246,6 +252,8 @@ public class TestMarkerBasedReconciliation extends HoodieClientTestBase {
       HoodieWriteStat stat = new HoodieWriteStat();
       String partitionPath = fileStatus.getPath().getParent().getName();
       stat.setPath(partitionPath + "/" + fileStatus.getPath().getName());
+      stat.setNumWrites(1);
+      stat.setNumInserts(1);
       stats.add(stat);
     });
 
@@ -275,6 +283,51 @@ public class TestMarkerBasedReconciliation extends HoodieClientTestBase {
       hoodieTable.doValidateCommitMetadataConsistency(HoodieActiveTimeline.DELTA_COMMIT_ACTION, "001", stats, metrics);
       Mockito.verify(metrics, Mockito.never()).emitCommitValidationFailures(HoodieActiveTimeline.DELTA_COMMIT_ACTION);
     }
+  }
+
+  @Test
+  public void testZeroCountWriteStatsValidation() throws Exception {
+    // Setup
+    HoodieTestTable testTable = HoodieTestTable.of(metaClient);
+    HoodieMetrics metrics = Mockito.mock(HoodieMetrics.class);
+
+    HoodieWriteConfig writerConfig = getConfigBuilder()
+        .withConsistencyGuardConfig(ConsistencyGuardConfig.newBuilder().withConsistencyCheckEnabled(false).build())
+        .withMarkersType(MarkerType.DIRECT.name())
+        .doValidateCommitMetadataConsistency(false) // test runs unconditionally
+        .withEmbeddedTimelineServerEnabled(false)
+        .withMetricsConfig(HoodieMetricsConfig.newBuilder().on(true).build()).build();
+    HoodieTable hoodieTable = HoodieSparkTable.create(writerConfig, context, metaClient);
+
+    // Scenario 1: All counts zero - should throw exception
+    List<HoodieWriteStat> statsWithAllZeros = new ArrayList<>();
+    HoodieWriteStat zeroStat = new HoodieWriteStat();
+    zeroStat.setFileId("test-file-id");
+    zeroStat.setPath("partA/test-file.parquet");
+    zeroStat.setPartitionPath("partA");
+    zeroStat.setNumWrites(0);
+    zeroStat.setNumInserts(1);
+    zeroStat.setNumDeletes(0);
+    zeroStat.setNumUpdateWrites(1);
+    statsWithAllZeros.add(zeroStat);
+
+    assertThrows(HoodieInconsistentMetadataException.class, () ->
+        hoodieTable.doValidateCommitMetadataConsistency(HoodieActiveTimeline.DELTA_COMMIT_ACTION, "001", statsWithAllZeros, metrics));
+
+    // Scenario 2: Valid stats with numWrites > 0 - should NOT throw exception
+    List<HoodieWriteStat> validStats = new ArrayList<>();
+    HoodieWriteStat validStat = new HoodieWriteStat();
+    validStat.setFileId("test-file-id-2");
+    validStat.setPath("partB/test-file-2.parquet");
+    validStat.setPartitionPath("partB");
+    validStat.setNumWrites(10);
+    validStat.setNumInserts(5);
+    validStat.setNumDeletes(0);
+    validStat.setNumUpdateWrites(5);
+    validStats.add(validStat);
+
+    // This should not throw any exception
+    hoodieTable.doValidateCommitMetadataConsistency(HoodieActiveTimeline.DELTA_COMMIT_ACTION, "002", validStats, metrics);
   }
 
   private String createDuplicateDataFile(String partition, String fileId, String writeToken) throws Exception {
