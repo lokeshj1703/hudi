@@ -1117,3 +1117,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-01-13 01:45:13] [release-v1.199.0] ---
 [ENG-35476][AUDIT-2097] fix: make insert overwrite with bulk insert more performant on unpartitioned table (#1687)
 [AUDIT-2090]: Changelog for release-v1.198.0 (#1691)
+
+--- [2026-01-21 16:08:46] [release-v1.200.0] ---
+[ENG-35865] fix: Add validation for invalid HoodieWriteStat with zero counts (#1694)
+[AUDIT-1071]: Changelog for release-v1.199.0 (#1692)
