@@ -118,7 +118,7 @@ class TestBaseRollbackHelper extends HoodieRollbackTestBase {
         new HoodieLocalEngineContext(HoodieTestUtils.getDefaultHadoopConf()),
         rollbackInstantTime,
         new HoodieInstant(true, HoodieTimeline.DELTA_COMMIT_ACTION, instantToRollback),
-        rollbackRequests, true, 5);
+        rollbackRequests, true, 5, false);
     validateStateAfterRollback(rollbackRequests);
     Path rollbackLogPath1 = new Path(new Path(basePath, partition2),
         FileCreateUtils.logFileName(baseInstantTimeOfLogFiles, logFileId1, 2));
@@ -184,7 +184,7 @@ class TestBaseRollbackHelper extends HoodieRollbackTestBase {
         new HoodieLocalEngineContext(HoodieTestUtils.getDefaultHadoopConf()),
         rollbackInstantTime,
         new HoodieInstant(true, HoodieTimeline.DELTA_COMMIT_ACTION, instantToRollback),
-        rollbackRequests, true, 5);
+        rollbackRequests, true, 5, false);
     validateStateAfterRollback(rollbackRequests);
     Path rollbackLogPath = new Path(new Path(basePath, partition),
         FileCreateUtils.logFileName(baseInstantTimeOfLogFiles, logFileId, ROLLBACK_LOG_VERSION));
@@ -250,7 +250,7 @@ class TestBaseRollbackHelper extends HoodieRollbackTestBase {
         context,
         rollbackInstantTime,
         new HoodieInstant(true, HoodieTimeline.DELTA_COMMIT_ACTION, instantToRollback),
-        rollbackRequests, true, 5);
+        rollbackRequests, true, 5, false);
 
     List<Pair<String, HoodieRollbackStat>> expected = new ArrayList<>();
     expected.add(Pair.of(partition1,
@@ -289,7 +289,7 @@ class TestBaseRollbackHelper extends HoodieRollbackTestBase {
           context,
           rollbackInstantTime,
           new HoodieInstant(true, HoodieTimeline.DELTA_COMMIT_ACTION, instantToRollback),
-          rollbackRequests, true, 5);
+          rollbackRequests, true, 5, false);
       fail("Should not have reached here");
     } catch (Throwable t) {
       if (!(t.getCause() instanceof HoodieIOException)) {

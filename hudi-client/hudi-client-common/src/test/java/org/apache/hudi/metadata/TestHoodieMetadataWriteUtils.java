@@ -107,6 +107,7 @@ public class TestHoodieMetadataWriteUtils {
   public void testFileSliceCache() {
     Properties properties = new Properties();
     properties.setProperty(HoodieMetadataConfig.ENABLE_FILE_SLICE_CACHE_OPTIMIZATION.key(), "true");
+    properties.setProperty(HoodieMetadataConfig.ENABLE_FILE_SLICE_CACHE_OPTIMIZATION_ROLLBACKS.key(), "true");
     HoodieWriteConfig writeConfig1 = HoodieWriteConfig.newBuilder()
         .withPath("/tmp")
         .withMetadataConfig(HoodieMetadataConfig.newBuilder().withProperties(properties).build())
@@ -116,6 +117,7 @@ public class TestHoodieMetadataWriteUtils {
     assertTrue(metadataWriteConfig1.shouldEnableFileSliceCacheOptimization());
     assertEquals(HoodieMetadataConfig.FILE_SLICE_CACHE_MAX_SIZE.defaultValue(), metadataWriteConfig1.getFileSliceCacheMaxSize());
     assertEquals(HoodieMetadataConfig.FILE_SLICE_CACHE_EXPIRATION_MINS.defaultValue(), metadataWriteConfig1.getFileSliceCacheExpirationInMins());
+    assertTrue(metadataWriteConfig1.shouldEnableFileSliceCacheOptimizationForMorRollbacks());
 
     properties = new Properties();
     properties.setProperty(HoodieMetadataConfig.ENABLE_FILE_SLICE_CACHE_OPTIMIZATION.key(), "true");
@@ -130,6 +132,7 @@ public class TestHoodieMetadataWriteUtils {
     assertTrue(metadataWriteConfig2.shouldEnableFileSliceCacheOptimization());
     assertEquals(10, metadataWriteConfig2.getFileSliceCacheMaxSize());
     assertEquals(20, metadataWriteConfig2.getFileSliceCacheExpirationInMins());
+    assertFalse(metadataWriteConfig2.shouldEnableFileSliceCacheOptimizationForMorRollbacks());
   }
 
   @Test

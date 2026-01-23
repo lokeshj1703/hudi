@@ -433,6 +433,13 @@ public final class HoodieMetadataConfig extends HoodieConfig {
       .sinceVersion("0.14.2")
       .withDocumentation("Enables cache for fetching latest file slice view for RLI lookup. Would help RECORD_INDEX lookups in MDT");
 
+  public static final ConfigProperty<Boolean> ENABLE_FILE_SLICE_CACHE_OPTIMIZATION_ROLLBACKS = ConfigProperty
+      .key(METADATA_PREFIX + ".file.slice.cache.optimization.rollbacks")
+      .defaultValue(false)
+      .markAdvanced()
+      .sinceVersion("0.14.2")
+      .withDocumentation("Enables cache for fetching latest file slice view for rollback execution. Would help RECORD_INDEX lookups in MDT at large scale");
+
   public long getMaxLogFileSize() {
     return getLong(MAX_LOG_FILE_SIZE_BYTES_PROP);
   }
@@ -615,6 +622,10 @@ public final class HoodieMetadataConfig extends HoodieConfig {
 
   public boolean shouldEnableFileSliceCacheOptimizationForRliLookup() {
     return getBoolean(ENABLE_FILE_SLICE_CACHE_OPTIMIZATION_RLI_LOOKUP);
+  }
+
+  public boolean shouldEnableFileSliceCacheOptimizationForRollbacks() {
+    return getBoolean(ENABLE_FILE_SLICE_CACHE_OPTIMIZATION_ROLLBACKS);
   }
 
   public static class Builder {
@@ -807,6 +818,11 @@ public final class HoodieMetadataConfig extends HoodieConfig {
 
     public Builder withEnableFileSliceCacheOptimizationForRliLookup(boolean shouldEnable) {
       metadataConfig.setValue(ENABLE_FILE_SLICE_CACHE_OPTIMIZATION_RLI_LOOKUP, Boolean.toString(shouldEnable));
+      return this;
+    }
+
+    public Builder withEnableFileSliceCacheOptimizationForRollbacks(boolean shouldEnable) {
+      metadataConfig.setValue(ENABLE_FILE_SLICE_CACHE_OPTIMIZATION_ROLLBACKS, Boolean.toString(shouldEnable));
       return this;
     }
 

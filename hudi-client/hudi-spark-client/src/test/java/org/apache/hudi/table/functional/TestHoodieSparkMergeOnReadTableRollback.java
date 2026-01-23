@@ -67,8 +67,7 @@ import org.apache.spark.api.java.JavaRDD;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.File;
@@ -156,11 +155,12 @@ public class TestHoodieSparkMergeOnReadTableRollback extends TestHoodieSparkRoll
   }
 
   @ParameterizedTest
-  @ValueSource(booleans = {true, false})
-  void testRollbackWithDeltaAndCompactionCommit(boolean rollbackUsingMarkers) throws Exception {
+  @CsvSource(value = {"true,false", "false,false", "true,true"})
+  void testRollbackWithDeltaAndCompactionCommit(boolean rollbackUsingMarkers, boolean enableFileSliceOptimization) throws Exception {
     // NOTE: First writer will have Metadata table DISABLED
     HoodieWriteConfig.Builder cfgBuilder =
         getConfigBuilder(false, rollbackUsingMarkers, HoodieIndex.IndexType.SIMPLE);
+    cfgBuilder.withEnableFileSliceCacheOptimizationMorRollback(enableFileSliceOptimization);
 
     addConfigsForPopulateMetaFields(cfgBuilder, true);
     HoodieWriteConfig cfg = cfgBuilder.build();
@@ -215,7 +215,10 @@ public class TestHoodieSparkMergeOnReadTableRollback extends TestHoodieSparkRoll
       final String commitTime1 = "000000002";
       // WriteClient with custom config (disable small file handling)
       // NOTE: Second writer will have Metadata table ENABLED
-      try (SparkRDDWriteClient secondClient = getHoodieWriteClient(getHoodieWriteConfigWithSmallFileHandlingOff(true));) {
+      HoodieWriteConfig.Builder configBuilder2 = getHoodieWriteConfigWithSmallFileHandlingOffBuilder(true);
+      configBuilder2.withEnableFileSliceCacheOptimizationMorRollback(enableFileSliceOptimization);
+
+      try (SparkRDDWriteClient secondClient = getHoodieWriteClient(configBuilder2.build())) {
         secondClient.startCommitWithTime(commitTime1);
 
         List<HoodieRecord> copyOfRecords = new ArrayList<>(records);
@@ -252,7 +255,9 @@ public class TestHoodieSparkMergeOnReadTableRollback extends TestHoodieSparkRoll
        * Write 3 (inserts + updates - testing successful delta commit)
        */
       final String commitTime2 = "000000003";
-      try (SparkRDDWriteClient thirdClient = getHoodieWriteClient(getHoodieWriteConfigWithSmallFileHandlingOff(true));) {
+      HoodieWriteConfig.Builder configBuilder3 = getHoodieWriteConfigWithSmallFileHandlingOffBuilder(true);
+      configBuilder3.withEnableFileSliceCacheOptimizationMorRollback(enableFileSliceOptimization);
+      try (SparkRDDWriteClient thirdClient = getHoodieWriteClient(configBuilder3.build())) {
         thirdClient.startCommitWithTime(commitTime2);
 
         List<HoodieRecord> copyOfRecords = new ArrayList<>(records);
@@ -328,21 +333,12 @@ public class TestHoodieSparkMergeOnReadTableRollback extends TestHoodieSparkRoll
     }
   }
 
-  public static List<Arguments> testReattemptRollbackArguments() {
-    List<Arguments> arguments = new ArrayList<>();
-    for (boolean arg1 : new Boolean[] {true, false}) {
-      for (boolean arg2 : new Boolean[] {true, false}) {
-        arguments.add(Arguments.of(arg1, arg2));
-      }
-    }
-    return arguments;
-  }
-
   @ParameterizedTest
-  @MethodSource("testReattemptRollbackArguments")
-  void testReattemptRollback(boolean rollbackUsingMarkers, boolean partitionedTable) throws Exception {
+  @CsvSource(value = {"true,true,false", "true,false,false", "false,false,false", "false,true,false", "true,true,true"})
+  void testReattemptRollback(boolean rollbackUsingMarkers, boolean partitionedTable, boolean enableFileSliceOptimization) throws Exception {
     HoodieWriteConfig.Builder cfgBuilder =
         getConfigBuilder(false, rollbackUsingMarkers, HoodieIndex.IndexType.SIMPLE);
+    cfgBuilder.withEnableFileSliceCacheOptimizationMorRollback(enableFileSliceOptimization);
 
     addConfigsForPopulateMetaFields(cfgBuilder, true);
     HoodieWriteConfig cfg = cfgBuilder.build();
@@ -397,7 +393,9 @@ public class TestHoodieSparkMergeOnReadTableRollback extends TestHoodieSparkRoll
        */
       final String commitTime1 = "000000002";
       // WriteClient with custom config (disable small file handling)
-      try (SparkRDDWriteClient secondClient = getHoodieWriteClient(getHoodieWriteConfigWithSmallFileHandlingOff(true));) {
+      HoodieWriteConfig.Builder configBuilder2 = getHoodieWriteConfigWithSmallFileHandlingOffBuilder(true);
+      configBuilder2.withEnableFileSliceCacheOptimizationMorRollback(enableFileSliceOptimization);
+      try (SparkRDDWriteClient secondClient = getHoodieWriteClient(configBuilder2.build())) {
         secondClient.startCommitWithTime(commitTime1);
 
         List<HoodieRecord> copyOfRecords = new ArrayList<>(records);
@@ -628,12 +626,14 @@ public class TestHoodieSparkMergeOnReadTableRollback extends TestHoodieSparkRoll
     }
   }
 
-  @Test
-  void testRestoreWithCleanedUpCommits() throws Exception {
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  void testRestoreWithCleanedUpCommits(boolean enableFileSliceOptimization) throws Exception {
     boolean populateMetaFields = true;
     HoodieWriteConfig.Builder cfgBuilder = getConfigBuilder(false)
         // Timeline-server-based markers are not used for multi-rollback tests
-        .withMarkersType(MarkerType.DIRECT.name());
+        .withMarkersType(MarkerType.DIRECT.name())
+        .withEnableFileSliceCacheOptimizationMorRollback(enableFileSliceOptimization);
     addConfigsForPopulateMetaFields(cfgBuilder, populateMetaFields);
     HoodieWriteConfig cfg = cfgBuilder.build();
 
@@ -999,13 +999,16 @@ public class TestHoodieSparkMergeOnReadTableRollback extends TestHoodieSparkRoll
   }
 
   @ParameterizedTest
-  @ValueSource(booleans = {true, false})
-  public void testLazyRollbackOfFailedCommit(boolean rollbackUsingMarkers) throws Exception {
+  @CsvSource(value = {"true,false", "false,false", "true,true"})
+  public void testLazyRollbackOfFailedCommit(boolean rollbackUsingMarkers, boolean enableFileSliceOptimization) throws Exception {
     Properties properties = new Properties();
     properties.setProperty(HoodieTableConfig.BASE_FILE_FORMAT.key(), HoodieTableConfig.BASE_FILE_FORMAT.defaultValue().toString());
     HoodieTableMetaClient metaClient = getHoodieMetaClient(MERGE_ON_READ, properties);
 
-    HoodieWriteConfig cfg = getWriteConfig(true, rollbackUsingMarkers);
+    HoodieWriteConfig.Builder cfgBuilder = getConfigBuilder(true, rollbackUsingMarkers, HoodieIndex.IndexType.SIMPLE);
+    cfgBuilder.withEnableFileSliceCacheOptimizationMorRollback(enableFileSliceOptimization);
+
+    HoodieWriteConfig cfg = cfgBuilder.build();
     HoodieWriteConfig autoCommitFalseCfg = getWriteConfig(false, rollbackUsingMarkers);
     HoodieTestDataGenerator dataGen = new HoodieTestDataGenerator();
 

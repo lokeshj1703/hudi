@@ -36,7 +36,9 @@ import org.apache.hudi.common.table.log.block.HoodieLogBlock;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.StringUtils;
+import org.apache.hudi.common.util.VisibleForTesting;
 import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.common.util.collection.Triple;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.exception.HoodieRollbackException;
@@ -53,8 +55,10 @@ import org.slf4j.LoggerFactory;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -64,6 +68,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static org.apache.hudi.common.table.log.HoodieLogFormat.UNKNOWN_WRITE_TOKEN;
 import static org.apache.hudi.table.action.rollback.RollbackUtils.groupSerializableRollbackRequestsBasedOnFileGroup;
 
 /**
@@ -108,8 +113,8 @@ public class BaseRollbackHelper implements Serializable {
     } catch (IOException e) {
       throw new HoodieRollbackException("Failed to list log file markers for previous attempt of rollback ", e);
     }
-
-    List<Pair<String, HoodieRollbackStat>> getRollbackStats = maybeDeleteAndCollectStats(context, instantTime, instantToRollback, serializableRequests, true, parallelism);
+    List<Pair<String, HoodieRollbackStat>> getRollbackStats = maybeDeleteAndCollectStats(context, instantTime, instantToRollback, serializableRequests, true, parallelism,
+        config.shouldEnableFileSliceCacheOptimizationForMorRollbacks());
     List<HoodieRollbackStat> mergedRollbackStatByPartitionPath = context.reduceByKey(getRollbackStats, RollbackUtils::mergeRollbackStat, parallelism);
     return addLogFilesFromPreviousFailedRollbacksToStat(context, mergedRollbackStatByPartitionPath, logPaths);
   }
@@ -126,7 +131,7 @@ public class BaseRollbackHelper implements Serializable {
     // stack trace: https://gist.github.com/nsivabalan/b6359e7d5038484f8043506c8bc9e1c8
     // related stack overflow post: https://issues.apache.org/jira/browse/SPARK-3601. Avro deserializes list as GenericData.Array.
     List<SerializableHoodieRollbackRequest> serializableRequests = rollbackRequests.stream().map(SerializableHoodieRollbackRequest::new).collect(Collectors.toList());
-    return context.reduceByKey(maybeDeleteAndCollectStats(context, instantTime, instantToRollback, serializableRequests, false, parallelism),
+    return context.reduceByKey(maybeDeleteAndCollectStats(context, instantTime, instantToRollback, serializableRequests, false, parallelism, false),
         RollbackUtils::mergeRollbackStat, parallelism);
   }
 
@@ -143,9 +148,16 @@ public class BaseRollbackHelper implements Serializable {
                                                                     String instantTime,
                                                                     HoodieInstant instantToRollback,
                                                                     List<SerializableHoodieRollbackRequest> rollbackRequests,
-                                                                    boolean doDelete, int numPartitions) {
+                                                                    boolean doDelete, int numPartitions,
+                                                                    boolean enableFileSliceOptimization) {
     List<SerializableHoodieRollbackRequest> groupedRollbackRequests =
         groupSerializableRollbackRequestsBasedOnFileGroup(rollbackRequests);
+
+    // Pre-compute latest log versions per partition to avoid repeated listStatus calls.
+    // Key: partition path, Value: map of (fileId, baseInstant) -> (latest log version, write token)
+    Map<String, Map<Pair<String, String>, Pair<Integer, String>>> partitionToLatestLogVersions = enableFileSliceOptimization
+        ? preComputeLatestLogVersionsForMorLogFiles(groupedRollbackRequests) : Collections.EMPTY_MAP;
+
     return context.flatMap(groupedRollbackRequests, (SerializableFunction<SerializableHoodieRollbackRequest, Stream<Pair<String, HoodieRollbackStat>>>) rollbackRequest -> {
       List<String> filesToBeDeleted = rollbackRequest.getFilesToBeDeleted();
       if (!filesToBeDeleted.isEmpty()) {
@@ -164,13 +176,37 @@ public class BaseRollbackHelper implements Serializable {
           // Let's emit markers for rollback as well. markers are emitted under rollback instant time.
           WriteMarkers writeMarkers = WriteMarkersFactory.get(config.getMarkersType(), table, instantTime);
 
-          writer = HoodieLogFormat.newWriterBuilder()
+          HoodieLogFormat.WriterBuilder writerBuilder = HoodieLogFormat.newWriterBuilder()
               .onParentPath(FSUtils.getPartitionPath(metaClient.getBasePathV2().toString(), partitionPath))
               .withFileId(fileId)
               .overBaseCommit(latestBaseInstant)
               .withFs(metaClient.getFs())
               .withLogWriteCallback(getRollbackLogMarkerCallback(writeMarkers, partitionPath, fileId))
-              .withFileExtension(HoodieLogFile.DELTA_EXTENSION).build();
+              .withFileExtension(HoodieLogFile.DELTA_EXTENSION);
+
+          // Use pre-computed log version if available
+          if (!partitionToLatestLogVersions.isEmpty()) {
+            Map<Pair<String, String>, Pair<Integer, String>> fileIdToVersion = partitionToLatestLogVersions.get(partitionPath);
+            if (fileIdToVersion != null) {
+              Pair<Integer, String> latestVersionWriteTokenPair = fileIdToVersion.get(Pair.of(fileId, latestBaseInstant));
+              if (latestVersionWriteTokenPair != null) {
+                // set log version and log write token.
+                writerBuilder.withLogVersion(latestVersionWriteTokenPair.getKey() + 1);
+                // should we set the write token as well. As of now, our rollback log files are written with "1-0-1" as write token.
+                writerBuilder.withLogWriteToken(UNKNOWN_WRITE_TOKEN);
+              } else {
+                // no log files found for the fileId of interest.
+                // On rare occasions we could hit this code block. say for the commit of interest, markers were added, but before adding the log file, the writer crashed.
+                // during rollback planning, we will account for the file id of interest due to presence of log file marker. but while listing fs during rollback execution,
+                // we may not find any log files only.
+                writerBuilder.withLogVersion(HoodieLogFile.LOGFILE_BASE_VERSION);
+                writerBuilder.withRolloverLogWriteToken(UNKNOWN_WRITE_TOKEN);
+                writerBuilder.withLogWriteToken(UNKNOWN_WRITE_TOKEN);
+              }
+            }
+          }
+
+          writer = writerBuilder.build();
 
           // generate metadata
           if (doDelete) {
@@ -230,6 +266,108 @@ public class BaseRollbackHelper implements Serializable {
             .stream();
       }
     }, numPartitions);
+  }
+
+  /**
+   * Pre-compute latest log versions for all file groups that need log block rollback.
+   * This avoids repeated listStatus calls per file group by listing each partition once.
+   *
+   * @param rollbackRequests list of rollback requests
+   * @return map of partition path -> (fileId, baseInstant) -> (latest log version, writeToken)
+   */
+  @VisibleForTesting
+  Map<String, Map<Pair<String, String>, Pair<Integer, String>>> preComputeLatestLogVersionsForMorLogFiles(
+      List<SerializableHoodieRollbackRequest> rollbackRequests) {
+    // Group requests by partition path for requests that have log blocks to delete
+    Map<String, List<SerializableHoodieRollbackRequest>> requestsByPartition = rollbackRequests.stream()
+        .filter(req -> !req.getLogBlocksToBeDeleted().isEmpty())
+        .collect(Collectors.groupingBy(SerializableHoodieRollbackRequest::getPartitionPath));
+
+    if (requestsByPartition.isEmpty()) {
+      return Collections.emptyMap();
+    }
+
+    // partition path -> (fileId, baseInstant) -> (latest log version, writeToken)
+    Map<String, Map<Pair<String, String>, Pair<Integer, String>>> result = new HashMap<>();
+    String basePath = metaClient.getBasePathV2().toString();
+    FileSystem fs = metaClient.getFs();
+    Comparator<String> logFileWriteTokenComparator = HoodieLogFile.getLogFileWriteTokenComparator();
+
+    for (Map.Entry<String, List<SerializableHoodieRollbackRequest>> entry : requestsByPartition.entrySet()) {
+      String partitionPath = entry.getKey();
+      List<SerializableHoodieRollbackRequest> partitionRequests = entry.getValue();
+
+      // Collect all (fileId, baseInstant) pairs needed for this partition
+      Set<Pair<String, String>> fileIdBaseInstantPairs = partitionRequests.stream()
+          .map(req -> Pair.of(req.getFileId(), req.getLatestBaseInstant()))
+          .collect(Collectors.toSet());
+
+      try {
+        Path fullPartitionPath = FSUtils.getPartitionPath(basePath, partitionPath);
+        // List all log files in the partition once
+        FileStatus[] logFileStatuses = fs.listStatus(fullPartitionPath,
+            path -> path.getName().contains(HoodieLogFile.DELTA_EXTENSION));
+
+        // Build fileId+baseInstant -> max version map
+        Map<Pair<String, String>, Triple<Integer, String, String>> fileIdToMaxVersion = new HashMap<>();
+        for (FileStatus status : logFileStatuses) {
+          String fileName = status.getPath().getName();
+          try {
+            HoodieLogFile logFile = new HoodieLogFile(status);
+            String fileId = logFile.getFileId();
+            String baseCommitTime = logFile.getBaseCommitTime();
+            Pair<String, String> key = Pair.of(fileId, baseCommitTime);
+
+            // Only track versions for file groups we care about
+            if (fileIdBaseInstantPairs.contains(key)) {
+              fileIdToMaxVersion.merge(key, Triple.of(logFile.getLogVersion(), logFile.getLogWriteToken(), logFile.getSuffix()),
+                  (logfile1Meta, logfile2Meta) -> {
+                    if (logfile1Meta.getLeft().equals(logfile2Meta.getLeft())) { // log version matches
+                      // write token comparison
+                      int compareWriteToken = logFileWriteTokenComparator.compare(logfile1Meta.getMiddle(), logfile2Meta.getMiddle());
+                      if (compareWriteToken == 0) {
+                        // both log version and write token matches. let's compare suffix and return
+                        return logfile1Meta.getRight().compareTo(logfile2Meta.getRight()) >= 0 ? logfile1Meta : logfile2Meta;
+                      }
+                      // write token mismatches
+                      return compareWriteToken > 0 ? logfile1Meta : logfile2Meta;
+                    }
+                    // version mismatches
+                    return logfile1Meta.getLeft().compareTo(logfile2Meta.getLeft()) >= 0 ? logfile1Meta : logfile2Meta;
+                  });
+            }
+          } catch (Exception e) {
+            // Skip files that don't match expected log file format
+            LOG.debug("Skipping file {} during log version pre-computation: {}", fileName, e.getMessage());
+          }
+        }
+
+        if (!fileIdToMaxVersion.isEmpty()) {
+          // remove suffix and return the fileId -> (log version and write token) to the caller
+          result.put(partitionPath, stripOffSuffixFromValue(fileIdToMaxVersion));
+        }
+      } catch (FileNotFoundException e) {
+        // Partition doesn't exist yet, no log files to track
+        LOG.debug("Partition {} not found during log version pre-computation", partitionPath);
+      } catch (IOException e) {
+        // Log warning but don't fail - the writer will fall back to computing version itself
+        LOG.warn("Failed to pre-compute log versions for partition {}: {}. Will fall back to per-file computation.",
+            partitionPath, e.getMessage());
+      }
+    }
+
+    LOG.info("Pre-computed log versions for {} partitions with {} total file groups",
+        result.size(), result.values().stream().mapToInt(Map::size).sum());
+    return result;
+  }
+
+  private Map<Pair<String, String>, Pair<Integer, String>> stripOffSuffixFromValue(Map<Pair<String, String>, Triple<Integer, String, String>> input) {
+    return input.entrySet().stream().map((kv) -> {
+          Pair<String, String> key = kv.getKey();
+          Triple<Integer, String, String> value = kv.getValue();
+          return new AbstractMap.SimpleImmutableEntry<Pair<String, String>, Pair<Integer, String>>(key, Pair.of(value.getLeft(), value.getMiddle()));
+        }
+    ).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
   }
 
   private HoodieLogFileWriteCallback getRollbackLogMarkerCallback(final WriteMarkers writeMarkers, String partitionPath, String fileId) {
