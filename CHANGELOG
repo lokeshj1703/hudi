@@ -1125,3 +1125,8 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-01-23 05:02:32] [release-v1.201.0] ---
 [ENG-36196] feat: add storage LP implementation for azure (#1699)
 [AUDIT-1071]: Changelog for release-v1.200.0 (#1696)
+
+--- [2026-01-24 03:14:14] [release-v1.202.0] ---
+[AUDIT-1071] Add hudi azure to jar publishing workflow (#1701)
+[ENG-36817][CHERRYPICK] Optimizing rollbacks in mdt to avoid repeated fs listing across all tasks (#1698)
+[AUDIT-1071]: Changelog for release-v1.201.0 (#1700)
