@@ -1316,7 +1316,7 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
       metadataMetaClient.reloadActiveTimeline();
     }
 
-    writeClient.startCommitWithTime(instantTime);
+    writeClient.startCommitWithTime(instantTime, metadataMetaClient.getCommitActionType(), metadataMetaClient);
     preWrite(instantTime);
     if (isInitializing) {
       engineContext.setJobStatus(this.getClass().getSimpleName(), String.format("Bulk inserting at %s into metadata table %s", instantTime, metadataWriteConfig.getTableName()));
@@ -1326,10 +1326,9 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
       writeClient.upsertPreppedRecords(preppedRecordInputs, instantTime);
     }
 
-    metadataMetaClient.reloadActiveTimeline();
-
     // Update total size of the metadata and count of base/log files
     if (metrics.isPresent() && metrics.get().shouldEnableDetailedMetadataMetrics()) {
+      metadataMetaClient.reloadActiveTimeline();
       metrics.get().updateSizeMetrics(metadataMetaClient, metadata, dataMetaClient.getTableConfig().getMetadataPartitions());
     }
   }
@@ -1533,7 +1532,6 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
     // delta commits synced over will not have an instant time lesser than the last completed instant on the
     // metadata table.
     final String compactionInstantTime = HoodieTableMetadataUtil.createCompactionTimestamp(latestDeltacommitTime);
-
     // we need to avoid checking compaction w/ same instant again.
     // let's say we trigger compaction after C5 in MDT and so compaction completes with C4001. but C5 crashed before completing in MDT.
     // and again w/ C6, we will re-attempt compaction at which point latest delta commit is C4 in MDT.

@@ -1711,6 +1711,10 @@ public class HoodieWriteConfig extends HoodieConfig {
     return getInt(HoodieArchivalConfig.ARCHIVE_MERGE_FILES_BATCH_SIZE);
   }
 
+  public boolean doOptimizedArchivalToRunPostClean() {
+    return getBoolean(HoodieArchivalConfig.OPTIMIZE_ARCHIVE_TO_RUN_POST_CLEAN);
+  }
+
   public int getParquetSmallFileLimit() {
     return getInt(HoodieCompactionConfig.PARQUET_SMALL_FILE_LIMIT);
   }

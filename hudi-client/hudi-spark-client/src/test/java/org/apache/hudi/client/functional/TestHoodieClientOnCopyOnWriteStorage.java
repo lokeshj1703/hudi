@@ -3141,7 +3141,7 @@ public class TestHoodieClientOnCopyOnWriteStorage extends HoodieClientTestBase {
     }
 
     @Override
-    protected void autoCleanOnCommit() {
+    protected boolean autoCleanOnCommit() {
       if (throwable instanceof Error) {
         throw (Error) throwable;
       }

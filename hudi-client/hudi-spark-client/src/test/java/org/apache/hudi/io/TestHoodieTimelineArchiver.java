@@ -1815,7 +1815,13 @@ public class TestHoodieTimelineArchiver extends HoodieSparkClientTestHarness {
         // For i == 2, roll back the first commit "00000001", so the active timeline of the
         // data table has one rollback instant
         // The completed rollback should not block the archival in the metadata table
+        metadataWriter.close();
+        metadataWriter = SparkHoodieBackedTableMetadataWriter.create(hadoopConf, writeConfig, context);
+        testTable = HoodieMetadataTestTable.of(metaClient, metadataWriter, Option.of(context));
         testTable.doRollback("00000001", "00000002");
+        metadataWriter.close();
+        metadataWriter = SparkHoodieBackedTableMetadataWriter.create(hadoopConf, writeConfig, context);
+        testTable = HoodieMetadataTestTable.of(metaClient, metadataWriter, Option.of(context));
       }
       // archival
       archiveAndGetCommitsList(writeConfig);

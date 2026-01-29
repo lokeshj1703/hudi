@@ -123,6 +123,13 @@ public class HoodieArchivalConfig extends HoodieConfig {
       .withDocumentation("If enabled, archival will limit the instants upto this value."
           + "This is useful when a large timeline containing tens of thousands instants that need to archived");
 
+  public static final ConfigProperty<String> OPTIMIZE_ARCHIVE_TO_RUN_POST_CLEAN = ConfigProperty
+      .key("hoodie.archive.optimize.to.run.post.clean")
+      .defaultValue("false")
+      .markAdvanced()
+      .sinceVersion("0.14.2")
+      .withDocumentation("Optimizing archival to run only when clean commit is triggered (inline table services are enabled.");
+
   /**
    * @deprecated Use {@link #MAX_COMMITS_TO_KEEP} and its methods instead
    */
@@ -226,6 +233,11 @@ public class HoodieArchivalConfig extends HoodieConfig {
 
     public Builder withArchiveLimitInstants(long limitInstants) {
       archivalConfig.setValue(ARCHIVE_LIMIT_INSTANTS, String.valueOf(limitInstants));
+      return this;
+    }
+
+    public Builder doOptimizeArchivalToRunPostClean(boolean optimizeArhivalToRunPostClean) {
+      archivalConfig.setValue(OPTIMIZE_ARCHIVE_TO_RUN_POST_CLEAN, String.valueOf(optimizeArhivalToRunPostClean));
       return this;
     }
 

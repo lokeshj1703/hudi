@@ -18,6 +18,7 @@
 
 package org.apache.hudi.client;
 
+import org.apache.hudi.avro.model.HoodieCleanMetadata;
 import org.apache.hudi.callback.common.WriteStatusValidator;
 import org.apache.hudi.client.embedded.EmbeddedTimelineService;
 import org.apache.hudi.client.transaction.lock.InProcessLockProvider;
@@ -190,6 +191,7 @@ class TestBaseHoodieWriteClient extends HoodieCommonTestHarness {
     HoodieTableMetaClient mockMetaClient = mock(HoodieTableMetaClient.class);
     when(table.getMetaClient()).thenReturn(mockMetaClient);
     BaseHoodieTableServiceClient<String, String, String> tableServiceClient = mock(BaseHoodieTableServiceClient.class);
+    when(tableServiceClient.clean(any(), eq(true))).thenReturn(null);
     TestWriteClient writeClient = new TestWriteClient(writeConfig, table, Option.empty(), tableServiceClient);
 
     writeClient.mayBeCleanAndArchive(table);
@@ -201,6 +203,34 @@ class TestBaseHoodieWriteClient extends HoodieCommonTestHarness {
       verifyNoInteractions(tableServiceClient);
       verifyNoInteractions(mockMetaClient);
     }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  void testOptimizeArchivalPostClean(boolean optimizeArchivalPostClean) throws IOException {
+    initMetaClient();
+    HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder()
+        .withPath(basePath)
+        .withCleanConfig(HoodieCleanConfig.newBuilder()
+            .withAutoClean(true)
+            .build())
+        .withArchivalConfig(HoodieArchivalConfig.newBuilder()
+            .withAutoArchive(true)
+            .doOptimizeArchivalToRunPostClean(optimizeArchivalPostClean)
+            .build())
+        .build();
+    HoodieTable<String, String, String, String> table = mock(HoodieTable.class);
+    HoodieTableMetaClient mockMetaClient = mock(HoodieTableMetaClient.class);
+    when(table.getMetaClient()).thenReturn(mockMetaClient);
+    BaseHoodieTableServiceClient<String, String, String> tableServiceClient = mock(BaseHoodieTableServiceClient.class);
+    HoodieCleanMetadata cleanMetadata = mock(HoodieCleanMetadata.class);
+    when(tableServiceClient.clean(any(), eq(true))).thenReturn(optimizeArchivalPostClean ? cleanMetadata : null);
+    TestWriteClient writeClient = new TestWriteClient(writeConfig, table, Option.empty(), tableServiceClient);
+
+    writeClient.mayBeCleanAndArchive(table);
+    verify(tableServiceClient).clean(any(), eq(true));
+    verify(tableServiceClient).archive(table);
+    verify(mockMetaClient).reloadActiveTimeline();
   }
 
   private HoodieWriteConfig getHoodieWriteConfigForRemoteView(FileSystemViewStorageType viewStorageType) {

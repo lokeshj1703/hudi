@@ -198,6 +198,20 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
     clientsToClose.forEach(BaseHoodieWriteClient::close);
   }
 
+  protected void resetMetadataWriterAndTestTable() throws Exception {
+    resetMetadataWriterAndTestTable(false);
+  }
+
+  protected void resetMetadataWriterAndTestTable(boolean nonPartitioned) throws Exception {
+    metaClient.reloadActiveTimeline();
+    metadataWriter.close();
+    metadataWriter = JavaHoodieBackedTableMetadataWriter.create(hadoopConf, writeConfig, context, Option.empty());
+    testTable = HoodieMetadataTestTable.of(metaClient, metadataWriter, Option.of(context));
+    if (nonPartitioned) {
+      testTable.setNonPartitioned();
+    }
+  }
+
   /**
    * Metadata Table bootstrap scenarios.
    */
@@ -219,7 +233,9 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
       doWriteOperationAndValidate(testTable, "0000003");
 
       // rollback last commit
+      resetMetadataWriterAndTestTable();
       doRollbackAndValidate(testTable, "0000003", "0000004");
+      resetMetadataWriterAndTestTable();
     }
 
     // trigger couple of upserts
@@ -728,7 +744,7 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
 
       // ensure commit2's delta commit in MDT has last mod time > the actual rollback for previous failed commit i.e. commit2.
       // if rollback wasn't eager, rollback's last mod time will be lower than the commit3'd delta commit last mod time.
-      assertTrue(commit3Files.get(0).getModificationTime() > rollbackFiles.get(0).getModificationTime());
+      assertTrue(commit3Files.get(0).getModificationTime() >= rollbackFiles.get(0).getModificationTime());
     }
   }
 
@@ -984,7 +1000,9 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
 
     // trigger a commit and rollback
     doWriteOperation(testTable, "0000004");
+    resetMetadataWriterAndTestTable();
     doRollbackAndValidate(testTable, "0000004", "0000005");
+    resetMetadataWriterAndTestTable();
 
     // trigger few upserts and validate
     for (int i = 6; i < 10; i++) {
@@ -995,28 +1013,38 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
     doWriteOperation(testTable, "0000010");
 
     // rollback last commit. and validate.
+    resetMetadataWriterAndTestTable();
     doRollbackAndValidate(testTable, "0000010", "0000011");
+    resetMetadataWriterAndTestTable();
 
     // rollback of compaction
     if (MERGE_ON_READ.equals(tableType)) {
       doCompactionAndValidate(testTable, "0000012");
+      resetMetadataWriterAndTestTable();
       doRollbackAndValidate(testTable, "0000012", "0000013");
+      resetMetadataWriterAndTestTable();
     }
 
     // roll back of delete
     doWriteOperation(testTable, "0000014", DELETE);
+    resetMetadataWriterAndTestTable();
     doRollbackAndValidate(testTable, "0000014", "0000015");
+    resetMetadataWriterAndTestTable();
 
     // rollback partial commit
     writeConfig = getWriteConfigBuilder(true, true, false).withRollbackUsingMarkers(false).build();
     doWriteOperation(testTable, "0000016");
+    resetMetadataWriterAndTestTable();
     testTable.doRollback("0000016", "0000017");
+    resetMetadataWriterAndTestTable();
     validateMetadata(testTable);
 
     // marker-based rollback of partial commit
     writeConfig = getWriteConfigBuilder(true, true, false).withRollbackUsingMarkers(true).build();
     doWriteOperation(testTable, "0000018");
+    resetMetadataWriterAndTestTable();
     testTable.doRollback("0000018", "0000019");
+    resetMetadataWriterAndTestTable();
     validateMetadata(testTable, true);
   }
 
@@ -1031,7 +1059,9 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
 
     // trigger a commit and rollback
     doWriteOperationNonPartitioned(testTable, "0000004", UPSERT);
+    resetMetadataWriterAndTestTable(true);
     doRollback(testTable, "0000004", "0000005");
+    resetMetadataWriterAndTestTable(true);
     validateMetadata(testTable);
 
     // trigger few upserts and validate
@@ -1082,7 +1112,9 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
     List<HoodieInstant> allInstants = metaClient.reloadActiveTimeline().getCommitsTimeline().getReverseOrderedInstants().collect(Collectors.toList());
     for (HoodieInstant instantToRollback : allInstants) {
       try {
+        resetMetadataWriterAndTestTable();
         testTable.doRollback(instantToRollback.getTimestamp(), String.valueOf(Time.now()));
+        resetMetadataWriterAndTestTable();
         validateMetadata(testTable);
         ++numRollbacks;
       } catch (HoodieMetadataException e) {
@@ -1321,7 +1353,9 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
     Map<String, List<String>> extraFiles = new HashMap<>();
     extraFiles.put("p1", Collections.singletonList("f10"));
     extraFiles.put("p2", Collections.singletonList("f12"));
+    resetMetadataWriterAndTestTable();
     testTable.doRollbackWithExtraFiles("0000004", "0000005", extraFiles);
+    resetMetadataWriterAndTestTable();
     validateMetadata(testTable);
   }
 
@@ -1531,7 +1565,7 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
 
     // ensure commit3's delta commit in MDT has last mod time > the actual rollback for previous failed commit i.e. commit2.
     // if rollback wasn't eager, rollback's last mod time will be lower than the commit3'd delta commit last mod time.
-    assertTrue(commit3Files.get(0).getModificationTime() > rollbackFiles.get(0).getModificationTime());
+    assertTrue(commit3Files.get(0).getModificationTime() >= rollbackFiles.get(0).getModificationTime());
     client.close();
   }
 

@@ -456,7 +456,7 @@ public class StreamSync implements Serializable, Closeable {
         InputBatch inputBatch = inputBatchAndUseRowWriter.getLeft();
         boolean useRowWriter = inputBatchAndUseRowWriter.getRight();
         initializeWriteClientAndRetryTableServices(inputBatch, metaClient);
-        result = writeToSinkAndDoMetaSync(instantTime, inputBatch, useRowWriter, metrics, overallTimerContext);
+        result = writeToSinkAndDoMetaSync(instantTime, inputBatch, useRowWriter, metrics, overallTimerContext, metaClient);
       }
 
       metrics.updateStreamerSyncMetrics(System.currentTimeMillis());
@@ -877,12 +877,13 @@ public class StreamSync implements Serializable, Closeable {
   private Pair<Option<String>, JavaRDD<WriteStatus>> writeToSinkAndDoMetaSync(String instantTime, InputBatch inputBatch,
                                                                               boolean useRowWriter,
                                                                               HoodieIngestionMetrics metrics,
-                                                                              Timer.Context overallTimerContext) {
+                                                                              Timer.Context overallTimerContext,
+                                                                              HoodieTableMetaClient metaClient) {
     Option<String> scheduledCompactionInstant = Option.empty();
     boolean releaseResourcesInvoked = false;
     try {
       // write to hudi and fetch result
-      startCommit(instantTime);
+      startCommit(instantTime, metaClient);
       WriteClientWriteResult writeClientWriteResult = writeToSink(inputBatch, instantTime, useRowWriter);
       Map<String, List<String>> partitionToReplacedFileIds = writeClientWriteResult.getPartitionToReplacedFileIds();
       Option<String> commitedInstantTime = getLatestInstantWithValidCheckpointInfo(commitsTimelineOpt);
@@ -957,9 +958,9 @@ public class StreamSync implements Serializable, Closeable {
    *
    */
   @VisibleForTesting
-  void startCommit(String instantTime) {
+  void startCommit(String instantTime, HoodieTableMetaClient metaClient) {
     String commitActionType = CommitUtils.getCommitActionType(cfg.operation, HoodieTableType.valueOf(cfg.tableType));
-    writeClient.startCommitWithTime(instantTime, commitActionType);
+    writeClient.startCommitWithTime(instantTime, commitActionType, metaClient);
   }
 
   private WriteClientWriteResult writeToSink(InputBatch inputBatch, String instantTime, boolean useRowWriter) {

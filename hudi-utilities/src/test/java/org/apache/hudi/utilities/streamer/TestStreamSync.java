@@ -23,6 +23,7 @@ import org.apache.hudi.client.SparkRDDWriteClient;
 import org.apache.hudi.client.common.HoodieSparkEngineContext;
 import org.apache.hudi.common.config.TypedProperties;
 import org.apache.hudi.common.model.WriteOperationType;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
 import org.apache.hudi.common.testutils.HoodieTestDataGenerator;
 import org.apache.hudi.common.util.Option;
@@ -74,8 +75,10 @@ class TestStreamSync extends HoodieDeltaStreamerTestBase {
     try (SparkRDDWriteClient writeClient = new SparkRDDWriteClient<>(new HoodieSparkEngineContext(jsc), HoodieWriteConfig.newBuilder().withProperties(streamProps).build())) {
       Assertions.assertTrue(writeClient.scheduleCompaction(Option.empty()).isPresent());
     }
-    Assertions.assertThrows(IllegalArgumentException.class, () -> streamSyncService.getStreamSync().startCommit("0"));
+
+    HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setBasePath(tableBasePath).setConf(jsc.hadoopConfiguration()).build();
+    Assertions.assertThrows(IllegalArgumentException.class, () -> streamSyncService.getStreamSync().startCommit("0", metaClient));
     String validInstantTime = HoodieActiveTimeline.createNewInstantTime();
-    Assertions.assertDoesNotThrow(() -> streamSyncService.getStreamSync().startCommit(validInstantTime));
+    Assertions.assertDoesNotThrow(() -> streamSyncService.getStreamSync().startCommit(validInstantTime, metaClient));
   }
 }

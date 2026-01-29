@@ -627,8 +627,10 @@ public abstract class BaseHoodieWriteClient<T, I, K, O> extends BaseHoodieClient
    */
   protected void mayBeCleanAndArchive(HoodieTable table) {
     try {
-      autoCleanOnCommit();
-      autoArchiveOnCommit(table);
+      boolean cleanTriggered = autoCleanOnCommit();
+      if (!config.doOptimizedArchivalToRunPostClean() || cleanTriggered) {
+        autoArchiveOnCommit(table);
+      }
     } catch (Throwable t) {
       LOG.error("Inline cleaning or archival failed for {}", table.getConfig().getBasePath(), t);
       throw t;
@@ -656,9 +658,9 @@ public abstract class BaseHoodieWriteClient<T, I, K, O> extends BaseHoodieClient
     tableServiceClient.runTableServicesInline(table, metadata, extraMetadata);
   }
 
-  protected void autoCleanOnCommit() {
+  protected boolean autoCleanOnCommit() {
     if (!config.isAutoClean()) {
-      return;
+      return false;
     }
 
     if (config.isAsyncClean()) {
@@ -668,8 +670,9 @@ public abstract class BaseHoodieWriteClient<T, I, K, O> extends BaseHoodieClient
     } else {
       LOG.info("Start to clean synchronously.");
       // Do not reuse instantTime for clean as metadata table requires all changes to have unique instant timestamps.
-      clean();
+      return clean() != null;
     }
+    return false;
   }
 
   protected void autoArchiveOnCommit(HoodieTable table) {
@@ -1007,7 +1010,7 @@ public abstract class BaseHoodieWriteClient<T, I, K, O> extends BaseHoodieClient
   /**
    * Completes a new commit time for a write operation (insert/update/delete) with specified action.
    */
-  private void startCommitWithTime(String instantTime, String actionType, HoodieTableMetaClient metaClient) {
+  public void startCommitWithTime(String instantTime, String actionType, HoodieTableMetaClient metaClient) {
     if (config.enableComplexKeygenValidation()) {
       validateComplexKeygen(metaClient);
     }
@@ -1417,7 +1420,6 @@ public abstract class BaseHoodieWriteClient<T, I, K, O> extends BaseHoodieClient
         break;
       default:
     }
-
     return table;
   }
 
