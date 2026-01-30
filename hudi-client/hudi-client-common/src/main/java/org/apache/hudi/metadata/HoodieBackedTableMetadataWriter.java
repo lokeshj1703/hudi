@@ -59,6 +59,7 @@ import org.apache.hudi.common.util.HoodieTimer;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.StringUtils;
 import org.apache.hudi.common.util.ValidationUtils;
+import org.apache.hudi.common.util.collection.ClosableIterator;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieException;
@@ -92,6 +93,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Iterator;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
@@ -694,16 +696,34 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
     final int parallelism = Math.min(partitionFileSlicePairs.size(), recordIndexMaxParallelism);
 
     return engineContext.parallelize(partitionFileSlicePairs, parallelism).flatMap(partitionAndFileSlice -> {
-
       final String partition = partitionAndFileSlice.getKey();
       final FileSlice fileSlice = partitionAndFileSlice.getValue();
       final String fileId = fileSlice.getFileId();
-      return new HoodieMergedReadHandle(dataWriteConfig, instantTime, hoodieTable, Pair.of(partition, fileSlice.getFileId()),
-          Option.of(fileSlice)).getMergedRecords().stream().map(record -> {
-            HoodieRecord record1 = (HoodieRecord) record;
-            return HoodieMetadataPayload.createRecordIndexUpdate(record1.getRecordKey(), partition, fileId,
-            record1.getCurrentLocation().getInstantTime(), 0);
-          }).iterator();
+      HoodieMergedReadHandle readHandle = new HoodieMergedReadHandle(dataWriteConfig, instantTime, hoodieTable,
+          Pair.of(partition, fileSlice.getFileId()), Option.of(fileSlice));
+
+      return new Iterator<HoodieRecord>() {
+        // Get the actual data source (Hudi's ClosableIterator)
+        private final ClosableIterator<HoodieRecord> mergedRecordsItr =
+            (ClosableIterator<HoodieRecord>) readHandle.getMergedRecordsItr();
+
+        @Override
+        public boolean hasNext() {
+          boolean hasNext = mergedRecordsItr.hasNext();
+          if (!hasNext) {
+            mergedRecordsItr.close();
+          }
+          return hasNext;
+        }
+
+        @Override
+        public HoodieRecord next() {
+          // LAZY TRANSFORMATION: Transform the record only when requested
+          HoodieRecord record = mergedRecordsItr.next();
+          return HoodieMetadataPayload.createRecordIndexUpdate(record.getRecordKey(), partition, fileId,
+              record.getCurrentLocation().getInstantTime(), 0);
+        }
+      };
     });
   }
 

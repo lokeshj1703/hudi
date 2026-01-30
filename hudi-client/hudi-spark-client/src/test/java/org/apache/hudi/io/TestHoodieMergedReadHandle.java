@@ -24,6 +24,7 @@ import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.model.AWSDmsAvroPayload;
 import org.apache.hudi.common.model.DefaultHoodieRecordPayload;
 import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.util.collection.ClosableIterator;
 import org.apache.hudi.common.model.HoodieRecordPayload;
 import org.apache.hudi.common.model.HoodieTableType;
 import org.apache.hudi.common.model.OverwriteNonDefaultsWithLatestAvroPayload;
@@ -49,9 +50,13 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Spliterator;
+import java.util.Spliterators;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import static org.apache.hudi.common.model.HoodieTableType.COPY_ON_WRITE;
 import static org.apache.hudi.common.model.HoodieTableType.MERGE_ON_READ;
@@ -199,7 +204,13 @@ public class TestHoodieMergedReadHandle extends SparkClientFunctionalTestHarness
     assertEquals(1, partitionPathAndFileIDPairs.size());
     String latestCommitTime = table.getActiveTimeline().lastInstant().get().getTimestamp();
     HoodieMergedReadHandle mergedReadHandle = new HoodieMergedReadHandle<>(writeConfig, Option.of(latestCommitTime), table, partitionPathAndFileIDPairs.get(0));
-    List<HoodieRecord> mergedRecords = mergedReadHandle.getMergedRecords();
+    Iterator<HoodieRecord> iterator = mergedReadHandle.getMergedRecordsItr();
+    List<HoodieRecord> mergedRecords;
+    try (ClosableIterator<HoodieRecord> closable = (ClosableIterator<HoodieRecord>) iterator) {
+      mergedRecords = StreamSupport.stream(
+          Spliterators.spliteratorUnknownSize(closable, Spliterator.ORDERED), false)
+          .collect(Collectors.toList());
+    }
     assertEquals(totalRecords, mergedRecords.size());
     List<HoodieRecord> sortedMergedRecords = mergedRecords.stream()
         .sorted(Comparator.comparing(HoodieRecord::getRecordKey)).collect(Collectors.toList());

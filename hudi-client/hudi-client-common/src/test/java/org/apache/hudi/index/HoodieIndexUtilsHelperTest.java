@@ -114,7 +114,7 @@ public class HoodieIndexUtilsHelperTest {
 
     try (MockedConstruction<HoodieMergedReadHandle> mockedConstruction =
              mockConstruction(HoodieMergedReadHandle.class,
-                 (mock, context) -> when(mock.getMergedRecords()).thenReturn(mockRecords))) {
+                 (mock, context) -> when(mock.getMergedRecordsItr()).thenReturn(mockRecords.iterator()))) {
 
       // Create test input data
       List<Pair<String, String>> locations = Collections.singletonList(

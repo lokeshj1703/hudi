@@ -47,6 +47,6 @@ public class HoodieIndexUtilsHelper {
         .map(HoodieInstant::getTimestamp);
     return partitionLocations.flatMap(p
         -> new HoodieMergedReadHandle(config, instantTime, hoodieTable, Pair.of(p.getKey(), p.getValue()))
-        .getMergedRecords().iterator());
+        .getMergedRecordsItr());
   }
 }

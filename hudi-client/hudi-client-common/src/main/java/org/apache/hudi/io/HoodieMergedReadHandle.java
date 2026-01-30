@@ -38,9 +38,9 @@ import org.apache.hudi.table.HoodieTable;
 import org.apache.avro.Schema;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -74,9 +74,9 @@ public class HoodieMergedReadHandle<T, I, K, O> extends HoodieReadHandle<T, I, K
     fileSliceOpt = fileSliceOption.isPresent() ? fileSliceOption : getLatestFileSlice();
   }
 
-  public List<HoodieRecord<T>> getMergedRecords() {
+  public Iterator<HoodieRecord<T>> getMergedRecordsItr() {
     if (!fileSliceOpt.isPresent()) {
-      return Collections.emptyList();
+      return Collections.emptyIterator();
     }
     checkState(nonEmpty(instantTime), String.format("Expected a valid instant time but got `%s`", instantTime));
     final FileSlice fileSlice = fileSliceOpt.get();
@@ -87,23 +87,15 @@ public class HoodieMergedReadHandle<T, I, K, O> extends HoodieReadHandle<T, I, K
     try {
       baseFileReader = getBaseFileReader(fileSlice);
       logRecordScanner = getLogRecordScanner(fileSlice);
-      List<HoodieRecord<T>> mergedRecords = new ArrayList<>();
-      doMergedRead(baseFileReader, logRecordScanner).forEach(r -> {
-        r.unseal();
-        r.setCurrentLocation(currentLocation);
-        r.seal();
-        mergedRecords.add(r);
-      });
-      return mergedRecords;
+      return new MergedRecordsIterator(baseFileReader, logRecordScanner, currentLocation);
     } catch (IOException e) {
-      throw new HoodieIndexException("Error in reading " + fileSlice, e);
-    } finally {
       if (baseFileReader.isPresent()) {
         baseFileReader.get().close();
       }
       if (logRecordScanner != null) {
         logRecordScanner.close();
       }
+      throw new HoodieIndexException("Error in reading " + fileSlice, e);
     }
   }
 
@@ -148,43 +140,154 @@ public class HoodieMergedReadHandle<T, I, K, O> extends HoodieReadHandle<T, I, K
         .build();
   }
 
-  private List<HoodieRecord<T>> doMergedRead(Option<HoodieFileReader> baseFileReaderOpt, HoodieMergedLogRecordScanner logRecordScanner) throws IOException {
-    List<HoodieRecord<T>> mergedRecords = new ArrayList<>();
-    Map<String, HoodieRecord> deltaRecordMap = logRecordScanner.getRecords();
-    Set<String> deltaRecordKeys = new HashSet<>(deltaRecordMap.keySet());
+  /**
+   * Iterator that lazily merges records from base file and log files without
+   * accumulating everything in memory.
+   */
+  private class MergedRecordsIterator implements ClosableIterator<HoodieRecord<T>> {
+    private final Option<HoodieFileReader> baseFileReaderOpt;
+    private final HoodieMergedLogRecordScanner logRecordScanner;
+    private final HoodieRecordLocation currentLocation;
+    private final Map<String, HoodieRecord> deltaRecordMap;
+    private final Set<String> deltaRecordKeys;
+    private final ClosableIterator<HoodieRecord<T>> baseFileIterator;
+    private final HoodieRecordMerger recordMerger;
+    private final Option<Pair<String, String>> simpleKeyGenFieldsOpt;
 
-    if (baseFileReaderOpt.isPresent()) {
-      HoodieFileReader baseFileReader = baseFileReaderOpt.get();
-      HoodieRecordMerger recordMerger = config.getRecordMerger();
-      ClosableIterator<HoodieRecord<T>> baseFileItr = baseFileReader.getRecordIterator(baseFileReaderSchema);
+    private Iterator<String> remainingDeltaKeysIterator; // created lazily when Phase 2 starts
+    private HoodieRecord<T> nextRecord;
+    private boolean baseFilePhaseComplete = false;
+    private boolean closed = false;
+
+    MergedRecordsIterator(Option<HoodieFileReader> baseFileReaderOpt,
+                          HoodieMergedLogRecordScanner logRecordScanner,
+                          HoodieRecordLocation currentLocation) throws IOException {
+      this.baseFileReaderOpt = baseFileReaderOpt;
+      this.logRecordScanner = logRecordScanner;
+      this.currentLocation = currentLocation;
+      this.deltaRecordMap = logRecordScanner.getRecords();
+      this.deltaRecordKeys = new HashSet<>(deltaRecordMap.keySet());
+      this.recordMerger = config.getRecordMerger();
+
       HoodieTableConfig tableConfig = hoodieTable.getMetaClient().getTableConfig();
-      Option<Pair<String, String>> simpleKeyGenFieldsOpt =
-          tableConfig.populateMetaFields() ? Option.empty() : Option.of(Pair.of(tableConfig.getRecordKeyFieldProp(), tableConfig.getPartitionFieldProp()));
-      while (baseFileItr.hasNext()) {
-        HoodieRecord<T> record = baseFileItr.next().wrapIntoHoodieRecordPayloadWithParams(readerSchema,
-            config.getProps(), simpleKeyGenFieldsOpt, logRecordScanner.isWithOperationField(), logRecordScanner.getPartitionNameOverride(), false, Option.empty());
-        String key = record.getRecordKey();
-        if (deltaRecordMap.containsKey(key)) {
-          deltaRecordKeys.remove(key);
-          Option<Pair<HoodieRecord, Schema>> mergeResult = recordMerger
-              .merge(record, readerSchema, deltaRecordMap.get(key), readerSchema, config.getPayloadConfig().getProps());
-          if (!mergeResult.isPresent()) {
-            continue;
+      this.simpleKeyGenFieldsOpt = tableConfig.populateMetaFields()
+          ? Option.empty()
+          : Option.of(Pair.of(tableConfig.getRecordKeyFieldProp(), tableConfig.getPartitionFieldProp()));
+
+      if (baseFileReaderOpt.isPresent()) {
+        this.baseFileIterator = baseFileReaderOpt.get().getRecordIterator(baseFileReaderSchema);
+      } else {
+        this.baseFileIterator = null;
+        this.baseFilePhaseComplete = true;
+      }
+
+      advance();
+    }
+
+    @Override
+    public boolean hasNext() {
+      return nextRecord != null;
+    }
+
+    @Override
+    public HoodieRecord<T> next() {
+      if (nextRecord == null) {
+        throw new java.util.NoSuchElementException();
+      }
+      HoodieRecord<T> result = nextRecord;
+      advance();
+      return result;
+    }
+
+    private void advance() {
+      nextRecord = null;
+
+      // Phase 1: Process base file records with merging
+      if (!baseFilePhaseComplete && baseFileIterator != null) {
+        while (baseFileIterator.hasNext() && nextRecord == null) {
+          try {
+            HoodieRecord<T> record = baseFileIterator.next().wrapIntoHoodieRecordPayloadWithParams(
+                readerSchema, config.getProps(), simpleKeyGenFieldsOpt,
+                logRecordScanner.isWithOperationField(), logRecordScanner.getPartitionNameOverride(),
+                false, Option.empty());
+            String key = record.getRecordKey();
+
+            if (deltaRecordMap.containsKey(key)) {
+              // Merge with delta record
+              deltaRecordKeys.remove(key);
+              Option<Pair<HoodieRecord, Schema>> mergeResult = recordMerger.merge(
+                  record, readerSchema, deltaRecordMap.get(key), readerSchema,
+                  config.getPayloadConfig().getProps());
+
+              if (mergeResult.isPresent()) {
+                HoodieRecord<T> mergedRecord = mergeResult.get().getLeft()
+                    .wrapIntoHoodieRecordPayloadWithParams(
+                        readerSchema, config.getProps(), simpleKeyGenFieldsOpt,
+                        logRecordScanner.isWithOperationField(),
+                        logRecordScanner.getPartitionNameOverride(), false, Option.empty());
+                nextRecord = prepareRecord(mergedRecord);
+              }
+              // If merge result is not present, skip this record (it's been deleted)
+            } else {
+              // No delta record, use base record
+              nextRecord = prepareRecord(record.copy());
+            }
+          } catch (Exception e) {
+            close();
+            throw new HoodieIndexException("Error processing base file record", e);
           }
-          HoodieRecord<T> r = mergeResult.get().getLeft().wrapIntoHoodieRecordPayloadWithParams(readerSchema,
-              config.getProps(), simpleKeyGenFieldsOpt, logRecordScanner.isWithOperationField(), logRecordScanner.getPartitionNameOverride(), false, Option.empty());
-          mergedRecords.add(r);
-        } else {
-          mergedRecords.add(record.copy());
         }
+
+        // Base file iteration complete
+        if (nextRecord == null) {
+          baseFilePhaseComplete = true;
+        }
+      }
+
+      // Phase 2: Process remaining delta-only records (iterator created after Phase 1 so set is correct)
+      if (baseFilePhaseComplete && nextRecord == null) {
+        if (remainingDeltaKeysIterator == null) {
+          remainingDeltaKeysIterator = deltaRecordKeys.iterator();
+        }
+        while (remainingDeltaKeysIterator.hasNext() && nextRecord == null) {
+          String key = remainingDeltaKeysIterator.next();
+          HoodieRecord deltaRecord = deltaRecordMap.get(key);
+          if (deltaRecord != null) {
+            nextRecord = prepareRecord((HoodieRecord<T>) deltaRecord);
+          }
+        }
+      }
+
+      // If we've exhausted all records, close resources
+      if (nextRecord == null && !closed) {
+        close();
       }
     }
 
-    for (String key : deltaRecordKeys) {
-      mergedRecords.add(deltaRecordMap.get(key));
+    private HoodieRecord<T> prepareRecord(HoodieRecord<T> record) {
+      record.unseal();
+      record.setCurrentLocation(currentLocation);
+      record.seal();
+      return record;
     }
 
-    return mergedRecords;
+    @Override
+    public void close() {
+      if (closed) {
+        return;
+      }
+      closed = true;
+
+      if (baseFileIterator != null) {
+        baseFileIterator.close();
+      }
+      if (baseFileReaderOpt.isPresent()) {
+        baseFileReaderOpt.get().close();
+      }
+      if (logRecordScanner != null) {
+        logRecordScanner.close();
+      }
+    }
   }
 }
 
