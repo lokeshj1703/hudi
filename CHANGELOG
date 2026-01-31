@@ -1134,3 +1134,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-01-29 16:11:43] [release-v1.203.0] ---
 [ENG-35504][CHERRYPICK] Optimize timeline loading for data table and metadata  (#1704)
 [AUDIT-1071]: Changelog for release-v1.202.0 (#1702)
+
+--- [2026-01-31 16:04:53] [release-v1.204.0] ---
+[ENG-36477][CHERRYPICK] - Change HoodieMergedReadHandle to use iterator for reading existing records. (#1705)
+[AUDIT-1071]: Changelog for release-v1.203.0 (#1706)
