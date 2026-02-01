@@ -63,7 +63,6 @@ import java.util.stream.Collectors;
 
 import static org.apache.hudi.common.util.CollectionUtils.toStream;
 import static org.apache.hudi.common.util.TypeUtils.unsafeCast;
-import static org.apache.hudi.common.util.ValidationUtils.checkState;
 
 /**
  * NOTE: PLEASE READ DOCS & COMMENTS CAREFULLY BEFORE MAKING CHANGES
@@ -190,8 +189,7 @@ public class HoodieAvroHFileReader extends HoodieAvroFileReaderBase implements H
    */
   @Override
   public Set<String> filterRowKeys(Set<String> candidateRowKeys) {
-    checkState(candidateRowKeys instanceof TreeSet,
-        String.format("HFile reader expects a TreeSet as iterating over ordered keys is more performant, got (%s)", candidateRowKeys.getClass().getSimpleName()));
+    TreeSet<String> sortedCandidateRowKeys = candidateRowKeys instanceof TreeSet ? (TreeSet<String>) candidateRowKeys : new TreeSet<>(candidateRowKeys);
 
     synchronized (sharedLock) {
       if (!sharedScanner.isPresent()) {
@@ -199,7 +197,7 @@ public class HoodieAvroHFileReader extends HoodieAvroFileReaderBase implements H
         // by default, to minimize amount of traffic to the underlying storage
         sharedScanner = Option.of(getHFileScanner(getSharedHFileReader(), true));
       }
-      return candidateRowKeys.stream().filter(k -> {
+      return sortedCandidateRowKeys.stream().filter(k -> {
         try {
           return isKeyAvailable(k, sharedScanner.get());
         } catch (IOException e) {
