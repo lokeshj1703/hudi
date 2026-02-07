@@ -1142,3 +1142,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-02-01 00:58:17] [release-v1.205.0] ---
 [ENG-36602] perf: Bloom filter improvements for memory usage (#1707)
 [AUDIT-1071]: Changelog for release-v1.204.0 (#1709)
+
+--- [2026-02-07 05:59:11] [release-v1.206.0] ---
+[ENG-37269] fix: Adding support for encoding with Timeline Server interaction (#1713)
+[AUDIT-2138]: Changelog for release-v1.205.0 (#1710)
