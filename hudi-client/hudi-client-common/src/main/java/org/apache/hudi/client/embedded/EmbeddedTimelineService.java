@@ -212,6 +212,7 @@ public class EmbeddedTimelineService {
         .withRemoteTimelineClientMaxRetryIntervalMs(clientWriteConfig.getClientSpecifiedViewStorageConfig().getRemoteTimelineClientMaxRetryIntervalMs())
         .withRemoteTimelineClientRetryExceptions(clientWriteConfig.getClientSpecifiedViewStorageConfig().getRemoteTimelineClientRetryExceptions())
         .withRemoteInitTimeline(clientWriteConfig.getClientSpecifiedViewStorageConfig().isRemoteInitEnabled())
+        .withRemoteResponseCharset(clientWriteConfig.getClientSpecifiedViewStorageConfig().getRemoteResponseCharset())
         .build();
   }
 
