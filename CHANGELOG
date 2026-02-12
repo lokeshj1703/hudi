@@ -1150,3 +1150,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-02-10 16:23:49] [release-v1.207.0] ---
 [ENG-36607] fix: Improve error message for conflict resolution (#1714)
 [AUDIT-1071]: Changelog for release-v1.206.0 (#1716)
+
+--- [2026-02-12 07:13:16] [release-v1.208.0] ---
+[ENG-36267][CHERRYPICK] Cherry pick OSS LP fixes (#1717)
+[AUDIT-1071]: Changelog for release-v1.207.0 (#1718)
