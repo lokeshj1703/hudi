@@ -1158,3 +1158,8 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-02-25 16:25:35] [release-v1.209.0] ---
 [ENG-37800][CHERRYPICK] Fix string handling in payload (#1727)
 [AUDIT-1071]: Changelog for release-v1.208.0 (#1719)
+
+--- [2026-02-27 16:11:07] [release-v1.210.0] ---
+[ENG-37877] fix: Parallelize cloud object existence checks in S3EventsHoodieIncrSource (#1736)
+[ENG-37934] Add CLAUDE.md with project overview and coding standards (#1737)
+[AUDIT-1071]: Changelog for release-v1.209.0 (#1735)
