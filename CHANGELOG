@@ -1163,3 +1163,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 [ENG-37877] fix: Parallelize cloud object existence checks in S3EventsHoodieIncrSource (#1736)
 [ENG-37934] Add CLAUDE.md with project overview and coding standards (#1737)
 [AUDIT-1071]: Changelog for release-v1.209.0 (#1735)
+
+--- [2026-03-02 20:51:25] [release-v1.211.0] ---
+[ENG-37877][CHERRYPICK] Resolve executor shutdown race in parallel cloud object existence check (#1741)
+[AUDIT-1071]: Changelog for release-v1.210.0 (#1739)
