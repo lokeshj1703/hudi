@@ -1164,10 +1164,10 @@ public abstract class BaseHoodieTableServiceClient<I, T, O> extends BaseHoodieCl
           .filter(instant -> EQUALS.test(instant.requestedTime(), commitInstantTime))
           .findFirst());
       Option<HoodieRollbackPlan> rollbackPlanOption;
-      String rollbackInstantTime;
+      Option<String> rollbackInstantTimeOpt;
       if (pendingRollbackInfo.isPresent()) {
         rollbackPlanOption = Option.of(pendingRollbackInfo.get().getRollbackPlan());
-        rollbackInstantTime = pendingRollbackInfo.get().getRollbackInstant().requestedTime();
+        rollbackInstantTimeOpt = pendingRollbackInfo.map(info -> info.getRollbackInstant().requestedTime());
       } else {
         if (commitInstantOpt.isEmpty()) {
           log.error("Cannot find instant {} in the timeline of table {} for rollback", commitInstantTime, config.getBasePath());
@@ -1177,8 +1177,26 @@ public abstract class BaseHoodieTableServiceClient<I, T, O> extends BaseHoodieCl
           txnManager.beginStateChange(Option.empty(), Option.empty());
         }
         try {
-          rollbackInstantTime = suppliedRollbackInstantTime.orElseGet(() -> createNewInstantTime(false));
-          rollbackPlanOption = table.scheduleRollback(context, rollbackInstantTime, commitInstantOpt.get(), false, config.shouldRollbackUsingMarkers(), false);
+          if (config.isExclusiveRollbackEnabled()) {
+            table.getMetaClient().reloadActiveTimeline();
+            Option<HoodiePendingRollbackInfo> pendingRollbackOpt = getPendingRollbackInfo(table.getMetaClient(), commitInstantTime);
+            rollbackInstantTimeOpt = pendingRollbackOpt.map(info -> info.getRollbackInstant().requestedTime());
+            if (pendingRollbackOpt.isPresent() && heartbeatClient.isHeartbeatExpired(rollbackInstantTimeOpt.get())) {
+              LOG.info("Heartbeat expired for rollback instant {}, executing rollback now", rollbackInstantTimeOpt);
+              HeartbeatUtils.deleteHeartbeatFile(storage, basePath, rollbackInstantTimeOpt.get(), config);
+              heartbeatClient.start(rollbackInstantTimeOpt.get());
+              rollbackPlanOption = pendingRollbackOpt.map(HoodiePendingRollbackInfo::getRollbackPlan);
+            } else {
+              // TODO: ABCDEFGHI revisit return value
+              return false;
+            }
+          } else {
+            rollbackInstantTimeOpt = suppliedRollbackInstantTime.or(() -> Option.of(createNewInstantTime(false)));
+            if (config.isExclusiveRollbackEnabled()) {
+              heartbeatClient.start(rollbackInstantTimeOpt.get());
+            }
+            rollbackPlanOption = table.scheduleRollback(context, rollbackInstantTimeOpt.get(), commitInstantOpt.get(), false, config.shouldRollbackUsingMarkers(), false);
+          }
         } finally {
           if (!skipLocking) {
             txnManager.endStateChange(Option.empty());
@@ -1194,13 +1212,16 @@ public abstract class BaseHoodieTableServiceClient<I, T, O> extends BaseHoodieCl
         // is set to false since they are already deleted.
         // Execute rollback
         HoodieRollbackMetadata rollbackMetadata = commitInstantOpt.isPresent()
-            ? table.rollback(context, rollbackInstantTime, commitInstantOpt.get(), true, skipLocking)
-            : table.rollback(context, rollbackInstantTime, table.getMetaClient().createNewInstant(
+            ? table.rollback(context, rollbackInstantTimeOpt.get(), commitInstantOpt.get(), true, skipLocking)
+            : table.rollback(context, rollbackInstantTimeOpt.get(), table.getMetaClient().createNewInstant(
                 HoodieInstant.State.INFLIGHT, rollbackPlanOption.get().getInstantToRollback().getAction(), commitInstantTime),
             false, skipLocking);
         if (timerContext != null) {
           long durationInMs = metrics.getDurationInMs(timerContext.stop());
           metrics.updateRollbackMetrics(durationInMs, rollbackMetadata.getTotalFilesDeleted());
+        }
+        if (config.isExclusiveRollbackEnabled()) {
+          heartbeatClient.stop(rollbackInstantTimeOpt.get());
         }
         return true;
       } else {
