@@ -157,7 +157,7 @@ public class DFSPropertiesConfiguration {
     );
 
     try {
-      if (filePath.equals(DEFAULT_PATH) && !fs.exists(filePath)) {
+      if (!fs.exists(filePath)) {
         LOG.warn("Properties file " + filePath + " not found. Ignoring to load props file");
         return;
       }
