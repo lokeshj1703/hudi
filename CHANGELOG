@@ -1178,3 +1178,6 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-03-15 16:07:16] [release-v1.214.0] ---
 [ENG-37888][CHERRYPICK] Fixing non existant file of a property file included within another property file (#1747)
 [AUDIT-2226]: Changelog for release-v1.213.0 (#1759)
+
+--- [2026-03-16 05:43:21] [release-v1.215.0] ---
+[AUDIT-1071]: Changelog for release-v1.214.0 (#1767)
