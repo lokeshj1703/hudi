@@ -38,10 +38,18 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinWorkerThread;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+
 import java.util.stream.Stream;
 
 import static org.apache.hudi.common.model.HoodieFileFormat.HOODIE_LOG;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -108,6 +116,117 @@ public class TestAverageRecordSizeEstimator {
     AverageRecordSizeEstimator averageRecordSizeEstimator = new AverageRecordSizeEstimator(writeConfig);
     long actualSize = averageRecordSizeEstimator.averageBytesPerRecord(mockTimeline);
     assertEquals(expectedSize, actualSize);
+  }
+
+  /**
+   * Validates that {@code averageBytesPerRecord()} does not dispatch work to
+   * {@code ForkJoinPool.commonPool()}.
+   *
+   * <p>Using the common pool risks deadlocks when the caller holds a {@code synchronized} lock
+   * that other common-pool tasks are also waiting on. The fix moves parallel processing off the
+   * common pool onto a dedicated executor so callers are fully isolated.
+   *
+   * <p>This test fails with the original {@code .parallel()} stream implementation (tasks run on
+   * common-pool worker threads) and passes after the fix (tasks run on dedicated executor threads).
+   */
+  @Test
+  void testAverageBytesPerRecordDoesNotUseCommonPool() throws IOException {
+    HoodieTimeline timeline = mock(HoodieTimeline.class);
+    when(timeline.empty()).thenReturn(false);
+    when(timeline.filterCompletedInstants()).thenReturn(timeline);
+
+    // Use enough instants so .parallel() actually dispatches tasks to pool workers,
+    // not just the calling thread.
+    int numInstants = ForkJoinPool.commonPool().getParallelism() * 2 + 2;
+    List<HoodieInstant> instants = new ArrayList<>();
+    AtomicBoolean ranOnCommonPool = new AtomicBoolean(false);
+
+    for (int i = 0; i < numInstants; i++) {
+      HoodieInstant instant = new HoodieInstant(HoodieInstant.State.COMPLETED,
+          HoodieTimeline.COMMIT_ACTION, String.format("2026031218%06d000", i));
+      instants.add(instant);
+
+      HoodieCommitMetadata metadata = new HoodieCommitMetadata();
+      HoodieWriteStat writeStat = new HoodieWriteStat();
+      writeStat.setNumWrites(100);
+      writeStat.setTotalWriteBytes(10_000_000L);
+      writeStat.setPath(getBaseFileName(instant.getTimestamp()));
+      metadata.addWriteStat("partition1", writeStat);
+
+      when(timeline.deserializeInstantContent(instant, HoodieCommitMetadata.class))
+          .thenAnswer(inv -> {
+            Thread t = Thread.currentThread();
+            if (t instanceof ForkJoinWorkerThread
+                && ((ForkJoinWorkerThread) t).getPool() == ForkJoinPool.commonPool()) {
+              ranOnCommonPool.set(true);
+            }
+            return metadata;
+          });
+    }
+
+    when(timeline.getReverseOrderedInstants()).thenAnswer(inv -> instants.stream());
+
+    HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder().withPath("/tmp")
+        .withRecordSizeEstimator(AverageRecordSizeEstimator.class.getName())
+        .withRecordSizeEstimatorMaxCommits(numInstants)
+        .withCompactionConfig(HoodieCompactionConfig.newBuilder()
+            .compactionRecordSizeEstimateThreshold(0.0)
+            .build())
+        .build();
+
+    long avgSize = new AverageRecordSizeEstimator(writeConfig).averageBytesPerRecord(timeline);
+
+    // 10_000_000 bytes / 100 records = 100_000 avg bytes per record
+    assertEquals(100_000L, avgSize,
+        "averageBytesPerRecord() should compute the correct average across all instants");
+    assertFalse(ranOnCommonPool.get(),
+        "averageBytesPerRecord() must not dispatch tasks to ForkJoinPool.commonPool(). "
+            + "Doing so can deadlock when the caller holds a synchronized lock that other "
+            + "common-pool tasks are also waiting on. Use a dedicated executor instead.");
+  }
+
+  @Test
+  void testAverageBytesPerRecordFallsBackOnDeserializationError() throws IOException {
+    HoodieTimeline timeline = mock(HoodieTimeline.class);
+    when(timeline.empty()).thenReturn(false);
+    when(timeline.filterCompletedInstants()).thenReturn(timeline);
+
+    HoodieInstant instant = new HoodieInstant(HoodieInstant.State.COMPLETED,
+        HoodieTimeline.COMMIT_ACTION, "20260318120000000");
+    when(timeline.getReverseOrderedInstants()).thenAnswer(inv -> Stream.of(instant));
+    when(timeline.deserializeInstantContent(any(HoodieInstant.class), eq(HoodieCommitMetadata.class)))
+        .thenThrow(new IOException("simulated deserialization failure"));
+
+    HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder().withPath("/tmp")
+        .withRecordSizeEstimator(AverageRecordSizeEstimator.class.getName())
+        .build();
+
+    long avgSize = new AverageRecordSizeEstimator(writeConfig).averageBytesPerRecord(timeline);
+    assertEquals(writeConfig.getCopyOnWriteRecordSizeEstimate(), avgSize,
+        "Should fall back to default record size when deserialization fails");
+  }
+
+  @Test
+  void testAverageBytesPerRecordFallsBackOnInterrupt() throws IOException {
+    HoodieTimeline timeline = mock(HoodieTimeline.class);
+    when(timeline.empty()).thenReturn(false);
+    when(timeline.filterCompletedInstants()).thenReturn(timeline);
+
+    HoodieInstant instant = new HoodieInstant(HoodieInstant.State.COMPLETED,
+        HoodieTimeline.COMMIT_ACTION, "20260318120000000");
+    when(timeline.getReverseOrderedInstants()).thenAnswer(inv -> Stream.of(instant));
+    when(timeline.deserializeInstantContent(any(HoodieInstant.class), eq(HoodieCommitMetadata.class)))
+        .thenAnswer(inv -> {
+          throw new InterruptedException("simulated interrupt");
+        });
+
+    HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder().withPath("/tmp")
+        .withRecordSizeEstimator(AverageRecordSizeEstimator.class.getName())
+        .build();
+
+    long avgSize = new AverageRecordSizeEstimator(writeConfig).averageBytesPerRecord(timeline);
+    assertEquals(writeConfig.getCopyOnWriteRecordSizeEstimate(), avgSize,
+        "Should fall back to default record size when interrupted");
   }
 
   private static String getBaseFileName(String instantTime) {
