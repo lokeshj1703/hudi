@@ -1185,3 +1185,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-03-18 16:24:11] [release-v1.216.0] ---
 [ENG-38586][CHERRYPICK] fix: NullPointerException in HFile reader creation (#1772)
 [AUDIT-2238]: Changelog for release-v1.215.0 (#1769)
+
+--- [2026-03-19 16:19:22] [release-v1.217.0] ---
+[ENG-38392] feat: Fix scheduling issues caused by ForkPoolJoin in AverageRecordSizeEstimator (#1768)
+[AUDIT-1071]: Changelog for release-v1.216.0 (#1773)
