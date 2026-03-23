@@ -1189,3 +1189,6 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-03-19 16:19:22] [release-v1.217.0] ---
 [ENG-38392] feat: Fix scheduling issues caused by ForkPoolJoin in AverageRecordSizeEstimator (#1768)
 [AUDIT-1071]: Changelog for release-v1.216.0 (#1773)
+
+--- [2026-03-23 05:31:32] [release-v1.218.0] ---
+[AUDIT-1071]: Changelog for release-v1.217.0 (#1774)
