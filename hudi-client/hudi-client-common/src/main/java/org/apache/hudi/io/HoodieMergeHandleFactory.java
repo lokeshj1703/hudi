@@ -132,15 +132,15 @@ public class HoodieMergeHandleFactory {
       }
     } else if (!WriteOperationType.isChangingRecords(operationType) && writeConfig.allowDuplicateInserts()) {
       mergeHandleClass = writeConfig.getConcatHandleClassName();
-      if (!mergeHandleClass.equals(HoodieWriteConfig.CONCAT_HANDLE_CLASS_NAME.defaultValue())) {
-        fallbackMergeHandleClass = HoodieWriteConfig.CONCAT_HANDLE_CLASS_NAME.defaultValue();
+      if (!mergeHandleClass.equals(HoodieRowConcatHandle.class.getName())) {
+        fallbackMergeHandleClass = HoodieRowConcatHandle.class.getName();
       }
     } else if (table.getMetaClient().getTableConfig().isCDCEnabled()) {
       mergeHandleClass = HoodieRowMergeHandleWithChangeLog.class.getName();
     } else {
       mergeHandleClass = writeConfig.getMergeHandleClassName();
-      if (!mergeHandleClass.equals(HoodieWriteConfig.MERGE_HANDLE_CLASS_NAME.defaultValue())) {
-        fallbackMergeHandleClass = HoodieWriteConfig.MERGE_HANDLE_CLASS_NAME.defaultValue();
+      if (!mergeHandleClass.equals(HoodieRowMergeHandle.class.getName())) {
+        fallbackMergeHandleClass = HoodieRowMergeHandle.class.getName();
       }
     }
 
@@ -152,14 +152,13 @@ public class HoodieMergeHandleFactory {
     String mergeHandleClass;
     String fallbackMergeHandleClass = null;
 
-    String defaultMergeHandleClass = HoodieWriteConfig.MERGE_HANDLE_CLASS_NAME.defaultValue();
     // Overwrite to sorted implementation for {@link HoodieRowMergeHandle} if sorting is required.
     if (table.requireSortedRecords()) {
       mergeHandleClass = HoodieSortedRowMergeHandle.class.getName();
     } else {
       mergeHandleClass = writeConfig.getMergeHandleClassName();
-      if (!mergeHandleClass.equals(HoodieWriteConfig.MERGE_HANDLE_CLASS_NAME.defaultValue())) {
-        fallbackMergeHandleClass = HoodieWriteConfig.MERGE_HANDLE_CLASS_NAME.defaultValue();
+      if (!mergeHandleClass.equals(HoodieRowMergeHandle.class.getName())) {
+        fallbackMergeHandleClass = HoodieRowMergeHandle.class.getName();
       }
     }
 

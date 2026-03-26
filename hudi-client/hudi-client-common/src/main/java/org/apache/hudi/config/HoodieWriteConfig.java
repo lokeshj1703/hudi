@@ -67,8 +67,6 @@ import org.apache.hudi.exception.HoodieNotSupportedException;
 import org.apache.hudi.execution.bulkinsert.BulkInsertSortMode;
 import org.apache.hudi.index.HoodieIndex;
 import org.apache.hudi.io.HoodieCreateHandle;
-import org.apache.hudi.io.HoodieRowConcatHandle;
-import org.apache.hudi.io.HoodieRowMergeHandle;
 import org.apache.hudi.keygen.SimpleAvroKeyGenerator;
 import org.apache.hudi.keygen.constant.KeyGeneratorOptions;
 import org.apache.hudi.keygen.constant.KeyGeneratorType;
@@ -841,9 +839,11 @@ public class HoodieWriteConfig extends HoodieConfig {
       .withDocumentation("Enable validation for commit time generation to ensure new commit time generated is always the latest among other entries. "
           + "This is for additional safety to always generate a monotonically increasing commit times (for ingestion writer, table services etc).");
 
+  // Note: We are making columnar concat and merge handles (parquet rewriter) default.
+  // If the dep is not found in runtime, it will fallback to the OSS implementations.
   public static final ConfigProperty<String> MERGE_HANDLE_CLASS_NAME = ConfigProperty
       .key("hoodie.write.merge.handle.class")
-      .defaultValue(HoodieRowMergeHandle.class.getName())
+      .defaultValue("com.onehouse.io.HoodieColumnarMergeHandle")
       .markAdvanced()
       .sinceVersion("0.15.1")
       .withDocumentation("The merge handle class to use to merge the records from a base file with an iterator of incoming records"
@@ -851,7 +851,7 @@ public class HoodieWriteConfig extends HoodieConfig {
 
   public static final ConfigProperty<String> CONCAT_HANDLE_CLASS_NAME = ConfigProperty
       .key("hoodie.write.concat.handle.class")
-      .defaultValue(HoodieRowConcatHandle.class.getName())
+      .defaultValue("com.onehouse.io.HoodieColumnarConcatHandle")
       .markAdvanced()
       .sinceVersion("0.15.1")
       .withDocumentation("The merge handle class to use to concat the records from a base file with an iterator of incoming records.");
