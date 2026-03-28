@@ -237,7 +237,8 @@ public abstract class BaseCommitActionExecutor<T, I, K, O, R>
       Iterator<HoodieRecord<T>> recordItr) throws Exception;
 
   protected abstract Iterator<List<WriteStatus>> handleUpdate(String partitionPath, String fileId,
-      Iterator<HoodieRecord<T>> recordItr) throws IOException;
+                                                              long numUpdates,
+                                                              Iterator<HoodieRecord<T>> recordItr) throws IOException;
 
   protected HoodieWriteMetadata<HoodieData<WriteStatus>> executeClustering(HoodieClusteringPlan clusteringPlan) {
     context.setJobStatus(this.getClass().getSimpleName(), "Clustering records for " + config.getTableName());

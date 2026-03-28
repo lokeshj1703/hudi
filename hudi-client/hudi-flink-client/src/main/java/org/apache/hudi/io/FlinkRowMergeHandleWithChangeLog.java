@@ -54,7 +54,7 @@ public class FlinkRowMergeHandleWithChangeLog<T, I, K, O>
   public FlinkRowMergeHandleWithChangeLog(HoodieWriteConfig config, String instantTime, HoodieTable<T, I, K, O> hoodieTable,
                                           Iterator<HoodieRecord<T>> recordItr, String partitionPath, String fileId,
                                           TaskContextSupplier taskContextSupplier) {
-    super(config, instantTime, hoodieTable, recordItr, partitionPath, fileId, taskContextSupplier);
+    super(config, instantTime, hoodieTable, MergeContext.create(recordItr), partitionPath, fileId, taskContextSupplier);
     this.cdcLogger = new HoodieCDCLogger(
         instantTime,
         config,

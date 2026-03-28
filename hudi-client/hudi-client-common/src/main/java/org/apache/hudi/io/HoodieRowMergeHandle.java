@@ -111,17 +111,17 @@ public class HoodieRowMergeHandle<T, I, K, O> extends HoodieMergeHandle<T, I, K,
   protected long insertRecordsWritten = 0;
 
   public HoodieRowMergeHandle(HoodieWriteConfig config, String instantTime, HoodieTable<T, I, K, O> hoodieTable,
-                              Iterator<HoodieRecord<T>> recordItr, String partitionPath, String fileId,
+                              MergeContext<T> mergeContext, String partitionPath, String fileId,
                               TaskContextSupplier taskContextSupplier, Option<BaseKeyGenerator> keyGeneratorOpt) {
-    this(config, instantTime, hoodieTable, recordItr, partitionPath, fileId, taskContextSupplier,
+    this(config, instantTime, hoodieTable, mergeContext, partitionPath, fileId, taskContextSupplier,
         getLatestBaseFile(hoodieTable, partitionPath, fileId), keyGeneratorOpt);
   }
 
   public HoodieRowMergeHandle(HoodieWriteConfig config, String instantTime, HoodieTable<T, I, K, O> hoodieTable,
-                              Iterator<HoodieRecord<T>> recordItr, String partitionPath, String fileId,
+                              MergeContext<T> mergeContext, String partitionPath, String fileId,
                               TaskContextSupplier taskContextSupplier, HoodieBaseFile baseFile, Option<BaseKeyGenerator> keyGeneratorOpt) {
-    super(config, instantTime, hoodieTable, recordItr, partitionPath, fileId, taskContextSupplier, baseFile, keyGeneratorOpt);
-    init(fileId, recordItr);
+    super(config, instantTime, hoodieTable, mergeContext, partitionPath, fileId, taskContextSupplier, baseFile, keyGeneratorOpt);
+    init(fileId, mergeContext.getRecordItr());
     init(fileId, partitionPath);
   }
 

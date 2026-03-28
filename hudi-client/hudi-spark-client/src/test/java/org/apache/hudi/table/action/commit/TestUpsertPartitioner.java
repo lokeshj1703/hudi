@@ -202,10 +202,16 @@ public class TestUpsertPartitioner extends HoodieClientTestBase {
     assertEquals(3, partitioner.numPartitions(), "Should have 3 partitions");
     assertEquals(BucketType.UPDATE, partitioner.getBucketInfo(0).bucketType,
         "Bucket 0 is UPDATE");
+    assertEquals(100, partitioner.getBucketInfo(0).getNumUpdates(),
+        "Bucket 0 should have 100 numUpdates");
     assertEquals(BucketType.INSERT, partitioner.getBucketInfo(1).bucketType,
         "Bucket 1 is INSERT");
+    assertEquals(0, partitioner.getBucketInfo(1).getNumUpdates(),
+        "INSERT bucket 1 should have 0 numUpdates");
     assertEquals(BucketType.INSERT, partitioner.getBucketInfo(2).bucketType,
         "Bucket 2 is INSERT");
+    assertEquals(0, partitioner.getBucketInfo(2).getNumUpdates(),
+        "INSERT bucket 2 should have 0 numUpdates");
     assertEquals(3, insertBuckets.size(), "Total of 3 insert buckets");
 
     Double[] weights = { 0.5, 0.25, 0.25};
@@ -223,6 +229,8 @@ public class TestUpsertPartitioner extends HoodieClientTestBase {
     assertEquals(4, partitioner.numPartitions(), "Should have 4 partitions");
     assertEquals(BucketType.UPDATE, partitioner.getBucketInfo(0).bucketType,
         "Bucket 0 is UPDATE");
+    assertEquals(100, partitioner.getBucketInfo(0).getNumUpdates(),
+        "Bucket 0 should have 100 numUpdates");
     assertEquals(BucketType.INSERT, partitioner.getBucketInfo(1).bucketType,
         "Bucket 1 is INSERT");
     assertEquals(BucketType.INSERT, partitioner.getBucketInfo(2).bucketType,
@@ -283,6 +291,8 @@ public class TestUpsertPartitioner extends HoodieClientTestBase {
             "Bucket 0 is UPDATE");
     assertEquals("2", partitioner.getBucketInfo(0).fileIdPrefix,
             "Should be assigned to only file id not pending compaction which is 2");
+    assertEquals(0, partitioner.getBucketInfo(0).getNumUpdates(),
+        "Small file UPDATE bucket with only inserts should have 0 numUpdates");
   }
 
   @Test
@@ -361,6 +371,8 @@ public class TestUpsertPartitioner extends HoodieClientTestBase {
             "Bucket 0 should be UPDATE");
     assertEquals("fg1", partitioner.getBucketInfo(0).fileIdPrefix,
             "Insert should be assigned to fg1");
+    assertEquals(0, partitioner.getBucketInfo(0).getNumUpdates(),
+        "Small file UPDATE bucket with only inserts should have 0 numUpdates");
   }
 
   @Test
@@ -444,18 +456,32 @@ public class TestUpsertPartitioner extends HoodieClientTestBase {
   @Test
   void testMapBasedSparkBucketInfoGetter() {
     Map<Integer, BucketInfo> bucketInfoMap = new HashMap<>();
-    bucketInfoMap.put(1, new BucketInfo(BucketType.UPDATE, "bucket1", "partition1"));
-    bucketInfoMap.put(2, new BucketInfo(BucketType.UPDATE, "bucket2", "partition2"));
+    bucketInfoMap.put(1, new BucketInfo(BucketType.UPDATE, "bucket1", "partition1", 42));
+    bucketInfoMap.put(2, new BucketInfo(BucketType.UPDATE, "bucket2", "partition2", 99));
     MapBasedSparkBucketInfoGetter getter = new MapBasedSparkBucketInfoGetter(bucketInfoMap);
 
     assertEquals(new BucketInfo(BucketType.UPDATE, "bucket1", "partition1"), getter.getBucketInfo(1));
+    assertEquals(42, getter.getBucketInfo(1).getNumUpdates());
     assertEquals(new BucketInfo(BucketType.UPDATE, "bucket2", "partition2"), getter.getBucketInfo(2));
+    assertEquals(99, getter.getBucketInfo(2).getNumUpdates());
+  }
+
+  @Test
+  void testBucketInfoDefaultNumUpdates() {
+    BucketInfo bucketInfo = new BucketInfo(BucketType.UPDATE, "file1", "partition1");
+    assertEquals(-1L, bucketInfo.getNumUpdates(), "Default numUpdates should be -1 (unknown)");
+
+    BucketInfo bucketInfoWithUpdates = new BucketInfo(BucketType.UPDATE, "file1", "partition1", 500);
+    assertEquals(500, bucketInfoWithUpdates.getNumUpdates());
+
+    BucketInfo insertBucket = new BucketInfo(BucketType.INSERT, "file2", "partition1", 0);
+    assertEquals(0, insertBucket.getNumUpdates());
   }
 
   @Test
   void testInsertOverwriteBucketInfoGetter() {
     BucketInfo insertInfo = new BucketInfo(BucketType.INSERT, "bucket1", "partition1");
-    BucketInfo updateInfo = new BucketInfo(BucketType.UPDATE, "bucket2", "partition2");
+    BucketInfo updateInfo = new BucketInfo(BucketType.UPDATE, "bucket2", "partition2", 75);
     Map<Integer, BucketInfo> map = new HashMap<>();
     map.put(0, insertInfo);
     map.put(1, updateInfo);
@@ -463,6 +489,7 @@ public class TestUpsertPartitioner extends HoodieClientTestBase {
     InsertOverwriteBucketInfoGetter getter = new InsertOverwriteBucketInfoGetter(map);
     BucketInfo result = getter.getBucketInfo(0);
     assertEquals(insertInfo, result);
+    assertEquals(-1L, result.getNumUpdates(), "INSERT bucket via 3-arg constructor should have -1 numUpdates");
     result = getter.getBucketInfo(1);
     assertEquals(BucketType.INSERT, result.getBucketType());
     assertEquals(updateInfo.getPartitionPath(), result.getPartitionPath());

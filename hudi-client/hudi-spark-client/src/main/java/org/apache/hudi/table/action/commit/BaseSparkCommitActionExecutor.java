@@ -52,6 +52,7 @@ import org.apache.hudi.index.HoodieIndex;
 import org.apache.hudi.io.CreateHandleFactory;
 import org.apache.hudi.io.HoodieMergeHandle;
 import org.apache.hudi.io.HoodieMergeHandleFactory;
+import org.apache.hudi.io.MergeContext;
 import org.apache.hudi.keygen.BaseKeyGenerator;
 import org.apache.hudi.keygen.factory.HoodieSparkKeyGeneratorFactory;
 import org.apache.hudi.metrics.HoodieMetrics;
@@ -369,7 +370,7 @@ public abstract class BaseSparkCommitActionExecutor<T> extends
       if (btype.equals(BucketType.INSERT)) {
         return handleInsert(binfo.fileIdPrefix, recordItr);
       } else if (btype.equals(BucketType.UPDATE)) {
-        return handleUpdate(binfo.partitionPath, binfo.fileIdPrefix, recordItr);
+        return handleUpdate(binfo.partitionPath, binfo.fileIdPrefix, binfo.getNumUpdates(), recordItr);
       } else {
         throw new HoodieUpsertException("Unknown bucketType " + btype + " for partition :" + partition);
       }
@@ -387,6 +388,7 @@ public abstract class BaseSparkCommitActionExecutor<T> extends
 
   @Override
   public Iterator<List<WriteStatus>> handleUpdate(String partitionPath, String fileId,
+                                                  long numUpdates,
                                                   Iterator<HoodieRecord<T>> recordItr)
       throws IOException {
     // This is needed since sometimes some buckets are never picked in getPartition() and end up with 0 records
@@ -402,7 +404,7 @@ public abstract class BaseSparkCommitActionExecutor<T> extends
     }
 
     // these are updates
-    HoodieMergeHandle mergeHandle = getUpdateHandle(partitionPath, fileId, recordItr);
+    HoodieMergeHandle mergeHandle = getUpdateHandle(partitionPath, fileId, numUpdates, recordItr);
     return handleUpdateInternal(mergeHandle, fileId);
   }
 
@@ -433,8 +435,10 @@ public abstract class BaseSparkCommitActionExecutor<T> extends
     return Collections.singletonList(mergeHandle.writeStatuses()).iterator();
   }
 
-  protected HoodieMergeHandle getUpdateHandle(String partitionPath, String fileId, Iterator<HoodieRecord<T>> recordItr) {
-    return HoodieMergeHandleFactory.create(operationType, config, instantTime, table, recordItr, partitionPath, fileId,
+  protected HoodieMergeHandle getUpdateHandle(String partitionPath, String fileId,
+                                              long numUpdates, Iterator<HoodieRecord<T>> recordItr) {
+    MergeContext<T> mergeContext = MergeContext.create(numUpdates, recordItr);
+    return HoodieMergeHandleFactory.create(operationType, config, instantTime, table, mergeContext, partitionPath, fileId,
         taskContextSupplier, keyGeneratorOpt);
   }
 

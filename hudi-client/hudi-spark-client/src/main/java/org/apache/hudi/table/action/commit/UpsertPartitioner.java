@@ -114,7 +114,7 @@ public class UpsertPartitioner<T> extends SparkHoodiePartitioner<T> {
       WorkloadStat outputWorkloadStats = profile.getOutputPartitionPathStatMap().getOrDefault(partitionStat.getKey(), new WorkloadStat());
       for (Map.Entry<String, Pair<String, Long>> updateLocEntry :
           partitionStat.getValue().getUpdateLocationToCount().entrySet()) {
-        addUpdateBucket(partitionStat.getKey(), updateLocEntry.getKey());
+        addUpdateBucket(partitionStat.getKey(), updateLocEntry.getKey(), updateLocEntry.getValue().getValue());
         if (profile.hasOutputWorkLoadStats()) {
           HoodieRecordLocation hoodieRecordLocation = new HoodieRecordLocation(updateLocEntry.getValue().getKey(), updateLocEntry.getKey());
           outputWorkloadStats.addUpdates(hoodieRecordLocation, updateLocEntry.getValue().getValue());
@@ -126,10 +126,10 @@ public class UpsertPartitioner<T> extends SparkHoodiePartitioner<T> {
     }
   }
 
-  private int addUpdateBucket(String partitionPath, String fileIdHint) {
+  private int addUpdateBucket(String partitionPath, String fileIdHint, long numUpdates) {
     int bucket = totalBuckets;
     updateLocationToBucket.put(fileIdHint, bucket);
-    BucketInfo bucketInfo = new BucketInfo(BucketType.UPDATE, fileIdHint, partitionPath);
+    BucketInfo bucketInfo = new BucketInfo(BucketType.UPDATE, fileIdHint, partitionPath, numUpdates);
     bucketInfoMap.put(totalBuckets, bucketInfo);
     totalBuckets++;
     return bucket;
@@ -204,7 +204,7 @@ public class UpsertPartitioner<T> extends SparkHoodiePartitioner<T> {
               bucket = updateLocationToBucket.get(smallFile.location.getFileId());
               LOG.debug("Assigning " + recordsToAppend + " inserts to existing update bucket " + bucket);
             } else {
-              bucket = addUpdateBucket(partitionPath, smallFile.location.getFileId());
+              bucket = addUpdateBucket(partitionPath, smallFile.location.getFileId(), 0L);
               LOG.debug("Assigning " + recordsToAppend + " inserts to new update bucket " + bucket);
             }
             if (profile.hasOutputWorkLoadStats()) {
@@ -237,7 +237,7 @@ public class UpsertPartitioner<T> extends SparkHoodiePartitioner<T> {
             } else {
               recordsPerBucket.add(totalUnassignedInserts - (insertBuckets - 1) * insertRecordsPerBucket);
             }
-            BucketInfo bucketInfo = new BucketInfo(BucketType.INSERT, FSUtils.createNewFileIdPfx(), partitionPath);
+            BucketInfo bucketInfo = new BucketInfo(BucketType.INSERT, FSUtils.createNewFileIdPfx(), partitionPath, 0L);
             bucketInfoMap.put(totalBuckets, bucketInfo);
             if (profile.hasOutputWorkLoadStats()) {
               outputWorkloadStats.addInserts(new HoodieRecordLocation(HoodieWriteStat.NULL_COMMIT, bucketInfo.getFileIdPrefix()), recordsPerBucket.get(recordsPerBucket.size() - 1));

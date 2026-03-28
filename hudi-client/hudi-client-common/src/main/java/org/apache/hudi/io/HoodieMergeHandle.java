@@ -36,7 +36,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
@@ -48,6 +47,8 @@ public abstract class HoodieMergeHandle<T, I, K, O> extends HoodieWriteHandle<T,
 
   private static final Logger LOG = LoggerFactory.getLogger(HoodieMergeHandle.class);
 
+  // The number of incoming update records based on tagging; -1 means unknown
+  protected long numIncomingUpdates = -1L;
   protected final HoodieBaseFile baseFileToMerge;
   protected Option<BaseKeyGenerator> keyGeneratorOpt;
   protected Path targetFilePath;
@@ -60,16 +61,16 @@ public abstract class HoodieMergeHandle<T, I, K, O> extends HoodieWriteHandle<T,
    * @param config Hoodie writer configs.
    * @param instantTime current instant time.
    * @param hoodieTable an instance of {@link HoodieTable}
-   * @param recordItr Iterator to the incoming upserts and insert records.
+   * @param mergeContext context carrying incoming data to merge and characteristics
    * @param partitionPath Partition path of the upsert and insert records.
    * @param fileId New file id of the target base file.
    * @param taskContextSupplier Base task context supplier
    * @param keyGeneratorOpt Optional instance of the {@link org.apache.hudi.keygen.KeyGenerator} used.
    */
   public HoodieMergeHandle(HoodieWriteConfig config, String instantTime, HoodieTable<T, I, K, O> hoodieTable,
-                           Iterator<HoodieRecord<T>> recordItr, String partitionPath, String fileId,
+                           MergeContext<T> mergeContext, String partitionPath, String fileId,
                            TaskContextSupplier taskContextSupplier, Option<BaseKeyGenerator> keyGeneratorOpt) {
-    this(config, instantTime, hoodieTable, recordItr, partitionPath, fileId, taskContextSupplier,
+    this(config, instantTime, hoodieTable, mergeContext, partitionPath, fileId, taskContextSupplier,
         getLatestBaseFile(hoodieTable, partitionPath, fileId), keyGeneratorOpt);
   }
 
@@ -78,7 +79,7 @@ public abstract class HoodieMergeHandle<T, I, K, O> extends HoodieWriteHandle<T,
    * @param config Hoodie writer configs.
    * @param instantTime current instant time.
    * @param hoodieTable an instance of {@link HoodieTable}
-   * @param recordItr Iterator to the incoming upserts and insert records.
+   * @param mergeContext context carrying incoming data to merge and characteristics
    * @param partitionPath Partition path of the upsert and insert records.
    * @param fileId New file id of the target base file.
    * @param taskContextSupplier Base task context supplier
@@ -86,9 +87,10 @@ public abstract class HoodieMergeHandle<T, I, K, O> extends HoodieWriteHandle<T,
    * @param keyGeneratorOpt Optional instance of the {@link org.apache.hudi.keygen.KeyGenerator} used.
    */
   public HoodieMergeHandle(HoodieWriteConfig config, String instantTime, HoodieTable<T, I, K, O> hoodieTable,
-                           Iterator<HoodieRecord<T>> recordItr, String partitionPath, String fileId,
+                           MergeContext<T> mergeContext, String partitionPath, String fileId,
                            TaskContextSupplier taskContextSupplier, HoodieBaseFile baseFile, Option<BaseKeyGenerator> keyGeneratorOpt) {
     super(config, instantTime, partitionPath, fileId, hoodieTable, taskContextSupplier);
+    this.numIncomingUpdates = mergeContext.getNumIncomingUpdates();
     this.baseFileToMerge = baseFile;
     this.keyGeneratorOpt = keyGeneratorOpt;
     init(fileId, partitionPath);
@@ -121,6 +123,10 @@ public abstract class HoodieMergeHandle<T, I, K, O> extends HoodieWriteHandle<T,
    * @throws IOException
    */
   public abstract void doMerge() throws IOException;
+
+  public long getNumIncomingUpdates() {
+    return numIncomingUpdates;
+  }
 
   public Path getOldFilePath() {
     return oldFilePath;

@@ -480,7 +480,7 @@ public class TestCopyOnWriteActionExecutor extends HoodieClientTestBase implemen
     table = (HoodieSparkCopyOnWriteTable) HoodieSparkTable.create(config, context, HoodieTableMetaClient.reload(metaClient));
     BaseSparkCommitActionExecutor newActionExecutor = new SparkUpsertCommitActionExecutor(context, config, table, nextInstantTime, context.parallelize(updates));
     final List<List<WriteStatus>> updateStatus = jsc.parallelize(Arrays.asList(1)).map(x -> {
-      return newActionExecutor.handleUpdate(partitionPath, fileId, updates.iterator());
+      return newActionExecutor.handleUpdate(partitionPath, fileId, updates.size(), updates.iterator());
     }).map(Transformations::flatten).collect();
     assertEquals(updates.size() - numRecordsInPartition, updateStatus.get(0).get(0).getTotalErrorRecords());
   }

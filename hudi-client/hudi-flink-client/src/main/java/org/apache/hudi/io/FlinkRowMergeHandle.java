@@ -21,7 +21,6 @@ package org.apache.hudi.io;
 import org.apache.hudi.client.WriteStatus;
 import org.apache.hudi.common.engine.TaskContextSupplier;
 import org.apache.hudi.common.fs.FSUtils;
-import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieException;
@@ -36,7 +35,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -64,9 +62,9 @@ public class FlinkRowMergeHandle<T, I, K, O>
   private List<Path> rolloverPaths;
 
   public FlinkRowMergeHandle(HoodieWriteConfig config, String instantTime, HoodieTable<T, I, K, O> hoodieTable,
-                             Iterator<HoodieRecord<T>> recordItr, String partitionPath, String fileId,
+                             MergeContext<T> mergeContext, String partitionPath, String fileId,
                              TaskContextSupplier taskContextSupplier) {
-    super(config, instantTime, hoodieTable, recordItr, partitionPath, fileId, taskContextSupplier, Option.empty());
+    super(config, instantTime, hoodieTable, mergeContext, partitionPath, fileId, taskContextSupplier, Option.empty());
     if (rolloverPaths == null) {
       // #makeOldAndNewFilePaths may already initialize it already
       rolloverPaths = new ArrayList<>();

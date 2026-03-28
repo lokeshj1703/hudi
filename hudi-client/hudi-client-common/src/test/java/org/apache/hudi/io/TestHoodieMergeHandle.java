@@ -104,7 +104,7 @@ public class TestHoodieMergeHandle extends HoodieCommonTestHarness {
     Exception exception = Assertions.assertThrows(HoodieValidationException.class, () -> new HoodieTestMergeHandle(writeConfig,
         invalidNextInstant,
         mockTable,
-        mockRecordItr,
+        MergeContext.create(mockRecordItr),
         DEFAULT_PARTITION_PATH,
         DEFAULT_FILE_ID,
         new LocalTaskContextSupplier(),
@@ -115,7 +115,7 @@ public class TestHoodieMergeHandle extends HoodieCommonTestHarness {
     exception = Assertions.assertThrows(HoodieValidationException.class, () -> new HoodieTestMergeHandle(writeConfig,
         invalidNextInstant,
         mockTable,
-        mockRecordItr,
+        MergeContext.create(mockRecordItr),
         DEFAULT_PARTITION_PATH,
         DEFAULT_FILE_ID,
         new LocalTaskContextSupplier(),
@@ -149,7 +149,7 @@ public class TestHoodieMergeHandle extends HoodieCommonTestHarness {
     Assertions.assertThrows(IllegalArgumentException.class, () -> new HoodieTestMergeHandle(writeConfig,
         NEXT_INSTANT_TIME,
         mockTable,
-        mockRecordItr,
+        MergeContext.create(mockRecordItr),
         DEFAULT_PARTITION_PATH,
         DEFAULT_FILE_ID,
         new LocalTaskContextSupplier(),
@@ -160,7 +160,7 @@ public class TestHoodieMergeHandle extends HoodieCommonTestHarness {
     Assertions.assertThrows(IllegalArgumentException.class, () -> new HoodieTestMergeHandle(writeConfig,
         NEXT_INSTANT_TIME,
         mockTable,
-        mockRecordItr,
+        MergeContext.create(mockRecordItr),
         DEFAULT_PARTITION_PATH,
         DEFAULT_FILE_ID,
         new LocalTaskContextSupplier(),
@@ -182,14 +182,108 @@ public class TestHoodieMergeHandle extends HoodieCommonTestHarness {
   }
 
   @Test
-  public void validateInitializedPaths() {
+  public void validateNumIncomingUpdatesDefaultIsUnknown() {
+    HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder().withPath(basePath).withSchema(HoodieTestDataGenerator.TRIP_EXAMPLE_SCHEMA).build();
+    when(mockTable.getConfig()).thenReturn(writeConfig);
+    // First constructor (iterator only, no explicit numIncomingUpdates)
+    HoodieTestMergeHandle mergeHandle = new HoodieTestMergeHandle(writeConfig,
+        NEXT_INSTANT_TIME,
+        mockTable,
+        MergeContext.create(mockRecordItr),
+        DEFAULT_PARTITION_PATH,
+        DEFAULT_FILE_ID,
+        new LocalTaskContextSupplier(),
+        Option.empty()
+    );
+    Assertions.assertEquals(-1L, mergeHandle.getNumIncomingUpdates(),
+        "Default numIncomingUpdates should be -1 (unknown) when MergeContext is created without explicit count");
+
+    // Second constructor (iterator only, with baseFile)
+    mergeHandle = new HoodieTestMergeHandle(writeConfig,
+        NEXT_INSTANT_TIME,
+        mockTable,
+        MergeContext.create(mockRecordItr),
+        DEFAULT_PARTITION_PATH,
+        DEFAULT_FILE_ID,
+        new LocalTaskContextSupplier(),
+        mockBaseFile,
+        Option.empty()
+    );
+    Assertions.assertEquals(-1L, mergeHandle.getNumIncomingUpdates(),
+        "Default numIncomingUpdates should be -1 (unknown) when MergeContext is created without explicit count");
+
+    // Third constructor (keyToNewRecords map, does not accept MergeContext)
+    mergeHandle = new HoodieTestMergeHandle(writeConfig,
+        NEXT_INSTANT_TIME,
+        mockTable,
+        Collections.emptyMap(),
+        DEFAULT_PARTITION_PATH,
+        DEFAULT_FILE_ID,
+        mockBaseFile,
+        new LocalTaskContextSupplier(),
+        Option.empty()
+    );
+    Assertions.assertEquals(-1L, mergeHandle.getNumIncomingUpdates(),
+        "numIncomingUpdates should be -1 (unknown) for map-based constructor");
+  }
+
+  @Test
+  void validateNumIncomingUpdatesPropagatedFromMergeContext() {
+    HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder().withPath(basePath).withSchema(HoodieTestDataGenerator.TRIP_EXAMPLE_SCHEMA).build();
+    when(mockTable.getConfig()).thenReturn(writeConfig);
+    long expectedNumUpdates = 42L;
+
+    // First constructor with explicit numIncomingUpdates via MergeContext
+    HoodieTestMergeHandle mergeHandle = new HoodieTestMergeHandle(writeConfig,
+        NEXT_INSTANT_TIME,
+        mockTable,
+        MergeContext.create(expectedNumUpdates, mockRecordItr),
+        DEFAULT_PARTITION_PATH,
+        DEFAULT_FILE_ID,
+        new LocalTaskContextSupplier(),
+        Option.empty()
+    );
+    Assertions.assertEquals(expectedNumUpdates, mergeHandle.getNumIncomingUpdates(),
+        "numIncomingUpdates should be propagated from MergeContext");
+
+    // Second constructor with explicit numIncomingUpdates via MergeContext
+    mergeHandle = new HoodieTestMergeHandle(writeConfig,
+        NEXT_INSTANT_TIME,
+        mockTable,
+        MergeContext.create(expectedNumUpdates, mockRecordItr),
+        DEFAULT_PARTITION_PATH,
+        DEFAULT_FILE_ID,
+        new LocalTaskContextSupplier(),
+        mockBaseFile,
+        Option.empty()
+    );
+    Assertions.assertEquals(expectedNumUpdates, mergeHandle.getNumIncomingUpdates(),
+        "numIncomingUpdates should be propagated from MergeContext");
+
+    // Verify zero is also a valid value (not confused with unknown)
+    mergeHandle = new HoodieTestMergeHandle(writeConfig,
+        NEXT_INSTANT_TIME,
+        mockTable,
+        MergeContext.create(0L, mockRecordItr),
+        DEFAULT_PARTITION_PATH,
+        DEFAULT_FILE_ID,
+        new LocalTaskContextSupplier(),
+        mockBaseFile,
+        Option.empty()
+    );
+    Assertions.assertEquals(0L, mergeHandle.getNumIncomingUpdates(),
+        "numIncomingUpdates of 0 should be preserved (distinct from -1 unknown)");
+  }
+
+  @Test
+  void validateInitializedPaths() {
     HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder().withPath(basePath).withSchema(HoodieTestDataGenerator.TRIP_EXAMPLE_SCHEMA).build();
     when(mockTable.getConfig()).thenReturn(writeConfig);
     // First constructor
     HoodieTestMergeHandle mergeHandle = new HoodieTestMergeHandle(writeConfig,
         NEXT_INSTANT_TIME,
         mockTable,
-        mockRecordItr,
+        MergeContext.create(mockRecordItr),
         DEFAULT_PARTITION_PATH,
         DEFAULT_FILE_ID,
         new LocalTaskContextSupplier(),
@@ -201,7 +295,7 @@ public class TestHoodieMergeHandle extends HoodieCommonTestHarness {
     mergeHandle = new HoodieTestMergeHandle(writeConfig,
         NEXT_INSTANT_TIME,
         mockTable,
-        mockRecordItr,
+        MergeContext.create(mockRecordItr),
         DEFAULT_PARTITION_PATH,
         DEFAULT_FILE_ID,
         new LocalTaskContextSupplier(),
@@ -235,14 +329,14 @@ public class TestHoodieMergeHandle extends HoodieCommonTestHarness {
 
   private static class HoodieTestMergeHandle extends HoodieMergeHandle {
 
-    public HoodieTestMergeHandle(HoodieWriteConfig config, String instantTime, HoodieTable hoodieTable, Iterator recordItr, String partitionPath, String fileId,
+    public HoodieTestMergeHandle(HoodieWriteConfig config, String instantTime, HoodieTable hoodieTable, MergeContext mergeContext, String partitionPath, String fileId,
                                  TaskContextSupplier taskContextSupplier, Option keyGeneratorOpt) {
-      super(config, instantTime, hoodieTable, recordItr, partitionPath, fileId, taskContextSupplier, keyGeneratorOpt);
+      super(config, instantTime, hoodieTable, mergeContext, partitionPath, fileId, taskContextSupplier, keyGeneratorOpt);
     }
 
-    public HoodieTestMergeHandle(HoodieWriteConfig config, String instantTime, HoodieTable hoodieTable, Iterator recordItr, String partitionPath, String fileId,
+    public HoodieTestMergeHandle(HoodieWriteConfig config, String instantTime, HoodieTable hoodieTable, MergeContext mergeContext, String partitionPath, String fileId,
                                  TaskContextSupplier taskContextSupplier, HoodieBaseFile baseFile, Option keyGeneratorOpt) {
-      super(config, instantTime, hoodieTable, recordItr, partitionPath, fileId, taskContextSupplier, baseFile, keyGeneratorOpt);
+      super(config, instantTime, hoodieTable, mergeContext, partitionPath, fileId, taskContextSupplier, baseFile, keyGeneratorOpt);
     }
 
     public HoodieTestMergeHandle(HoodieWriteConfig config, String instantTime, HoodieTable hoodieTable, Map keyToNewRecords, String partitionPath, String fileId,

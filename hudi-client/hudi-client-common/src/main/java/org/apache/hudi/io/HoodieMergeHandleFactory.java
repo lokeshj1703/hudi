@@ -34,7 +34,6 @@ import org.apache.hudi.table.HoodieTable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Iterator;
 import java.util.Map;
 
 /**
@@ -51,7 +50,7 @@ public class HoodieMergeHandleFactory {
       HoodieWriteConfig writeConfig,
       String instantTime,
       HoodieTable<T, I, K, O> table,
-      Iterator<HoodieRecord<T>> recordItr,
+      MergeContext<T> mergeContext,
       String partitionPath,
       String fileId,
       TaskContextSupplier taskContextSupplier,
@@ -61,18 +60,18 @@ public class HoodieMergeHandleFactory {
     LOG.info("Create HoodieMergeHandle implementation {} for fileId {} and partition path {} at commit {}", mergeHandleClasses.getLeft(), fileId, partitionPath, instantTime);
     try {
       return ReflectionUtils.loadClass(mergeHandleClasses.getLeft(),
-          new Class<?>[] {HoodieWriteConfig.class, String.class, HoodieTable.class, Iterator.class, String.class, String.class,
+          new Class<?>[] {HoodieWriteConfig.class, String.class, HoodieTable.class, MergeContext.class, String.class, String.class,
               TaskContextSupplier.class, Option.class},
-          writeConfig, instantTime, table, recordItr, partitionPath, fileId, taskContextSupplier, keyGeneratorOpt);
+          writeConfig, instantTime, table, mergeContext, partitionPath, fileId, taskContextSupplier, keyGeneratorOpt);
     } catch (Throwable e1) {
       if (isFallbackEnabled && null != mergeHandleClasses.getRight()) {
         try {
           LOG.warn("HoodieMergeHandle implementation {} failed, now creating fallback implementation {} for fileId {} and partitionPath {} at commit {}",
               mergeHandleClasses.getLeft(), mergeHandleClasses.getRight(), fileId, partitionPath, instantTime);
           return ReflectionUtils.loadClass(mergeHandleClasses.getRight(),
-              new Class<?>[] {HoodieWriteConfig.class, String.class, HoodieTable.class, Iterator.class, String.class, String.class,
+              new Class<?>[] {HoodieWriteConfig.class, String.class, HoodieTable.class, MergeContext.class, String.class, String.class,
                   TaskContextSupplier.class, Option.class},
-              writeConfig, instantTime, table, recordItr, partitionPath, fileId, taskContextSupplier, keyGeneratorOpt);
+              writeConfig, instantTime, table, mergeContext, partitionPath, fileId, taskContextSupplier, keyGeneratorOpt);
         } catch (Throwable e2) {
           throw new HoodieException("Could not instantiate the fallback HoodieMergeHandle implementation: " + mergeHandleClasses.getRight(), e2);
         }

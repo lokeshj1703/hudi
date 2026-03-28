@@ -174,7 +174,7 @@ public class FlinkWriteHandleFactory {
         Iterator<HoodieRecord<T>> recordItr,
         String partitionPath,
         String fileId) {
-      return new FlinkRowMergeHandle<>(config, instantTime, table, recordItr, partitionPath,
+      return new FlinkRowMergeHandle<>(config, instantTime, table, MergeContext.create(recordItr), partitionPath,
           fileId, table.getTaskContextSupplier());
     }
   }

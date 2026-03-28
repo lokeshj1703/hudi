@@ -74,10 +74,11 @@ public class HoodieRowConcatHandle<T, I, K, O> extends HoodieRowMergeHandle<T, I
   private final Iterator<HoodieRecord<T>> recordItr;
 
   public HoodieRowConcatHandle(HoodieWriteConfig config, String instantTime, HoodieTable<T, I, K, O> hoodieTable,
-                               Iterator<HoodieRecord<T>> recordItr, String partitionPath, String fileId,
+                               MergeContext<T> mergeContext, String partitionPath, String fileId,
                                TaskContextSupplier taskContextSupplier, Option<BaseKeyGenerator> keyGeneratorOpt) {
-    super(config, instantTime, hoodieTable, Collections.emptyIterator(), partitionPath, fileId, taskContextSupplier, keyGeneratorOpt);
-    this.recordItr = recordItr;
+    super(config, instantTime, hoodieTable, MergeContext.create(mergeContext.getNumIncomingUpdates(), Collections.emptyIterator()),
+        partitionPath, fileId, taskContextSupplier, keyGeneratorOpt);
+    this.recordItr = mergeContext.getRecordItr();
   }
 
   public HoodieRowConcatHandle(HoodieWriteConfig config, String instantTime, HoodieTable hoodieTable,
