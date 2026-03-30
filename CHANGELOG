@@ -1201,3 +1201,6 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 [ENG-38826] feat(core): Pass the number of updates from workload profiling through to merge handle (#1786)
 [ENG-38826][CHERRYPICK] fix: Fix test flakiness (#1787)
 [AUDIT-1071]: Changelog for release-v1.219.0 (#1785)
+
+--- [2026-03-30 07:16:19] [release-v1.221.0] ---
+[AUDIT-1071]: Changelog for release-v1.220.0 (#1788)
