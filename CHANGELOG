@@ -1204,3 +1204,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 
 --- [2026-03-30 07:16:19] [release-v1.221.0] ---
 [AUDIT-1071]: Changelog for release-v1.220.0 (#1788)
+
+--- [2026-03-31 16:22:56] [release-v1.222.0] ---
+[ENG-37498] Update CachedSchemaRegistryClient to have configs passed in constructor which can be used for gcp schema registry (#1784)
+[AUDIT-2273]: Changelog for release-v1.221.0 (#1789)
