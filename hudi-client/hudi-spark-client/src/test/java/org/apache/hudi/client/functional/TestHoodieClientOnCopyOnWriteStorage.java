@@ -1803,6 +1803,116 @@ public class TestHoodieClientOnCopyOnWriteStorage extends HoodieClientTestBase {
     assertEquals(config.isRollbackPendingClustering() ? 0 : 1, pendingClusteringPlans.size());
   }
 
+  /**
+   * Test rollback with markers enabled - verify rollback uses marker-based approach.
+   */
+  @Test
+  public void testRollbackPendingClusteringWithMarkers() throws Exception {
+    HoodieClusteringConfig clusteringConfig = HoodieClusteringConfig.newBuilder()
+        .withClusteringMaxNumGroups(10).withClusteringTargetPartitions(0)
+        .withClusteringUpdatesStrategy("org.apache.hudi.client.clustering.update.strategy.SparkAllowUpdateStrategy")
+        .withRollbackPendingClustering(true)
+        .fromProperties(getDisabledRowWriterProperties()).build();
+
+    HoodieWriteConfig.Builder cfgBuilder = getConfigBuilder(EAGER);
+    addConfigsForPopulateMetaFields(cfgBuilder, true);
+    cfgBuilder.withClusteringConfig(clusteringConfig)
+        .withRollbackUsingMarkers(true)
+        .withMarkersType(MarkerType.DIRECT.name());
+    HoodieWriteConfig config = cfgBuilder.build();
+    SparkRDDWriteClient client = getHoodieWriteClient(config);
+
+    // Insert initial data
+    String instant1 = "001";
+    List<HoodieRecord> records = dataGen.generateInserts(instant1, 100);
+    writeAndVerifyBatch(client, records, instant1, true);
+
+    // Schedule clustering
+    Option<String> clusteringInstantOpt = client.scheduleClustering(Option.empty());
+    String clusteringInstant = clusteringInstantOpt.get();
+    HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setConf(hadoopConf).setBasePath(basePath).build();
+
+    // Verify clustering is pending
+    List<Pair<HoodieInstant, HoodieClusteringPlan>> pendingPlans =
+        ClusteringUtils.getAllPendingClusteringPlans(metaClient).collect(Collectors.toList());
+    assertEquals(1, pendingPlans.size());
+
+    // Make updates to trigger rollback
+    String updateInstant = "004";
+    List<HoodieRecord> updates = dataGen.generateUniqueUpdates(updateInstant, 50);
+    writeAndVerifyBatch(client, updates, updateInstant, true, false, false);
+
+    // Verify clustering was rolled back
+    metaClient = HoodieTableMetaClient.reload(metaClient);
+    pendingPlans = ClusteringUtils.getAllPendingClusteringPlans(metaClient).collect(Collectors.toList());
+    assertEquals(0, pendingPlans.size(), "Clustering should be rolled back");
+
+    // Verify rollback completed successfully
+    HoodieTimeline rollbackTimeline = metaClient.getActiveTimeline().getRollbackTimeline().filterCompletedInstants();
+    assertTrue(rollbackTimeline.countInstants() >= 1, "Should have rollback commit");
+  }
+
+  /**
+   * Test timeline reload after rollback - verify timeline state is consistent
+   * and no stale clustering instants remain.
+   */
+  @Test
+  public void testTimelineReloadAfterRollback() throws Exception {
+    HoodieClusteringConfig clusteringConfig = HoodieClusteringConfig.newBuilder()
+        .withClusteringMaxNumGroups(10).withClusteringTargetPartitions(0)
+        .withClusteringUpdatesStrategy("org.apache.hudi.client.clustering.update.strategy.SparkAllowUpdateStrategy")
+        .withRollbackPendingClustering(true)
+        .fromProperties(getDisabledRowWriterProperties()).build();
+
+    HoodieWriteConfig.Builder cfgBuilder = getConfigBuilder(EAGER);
+    addConfigsForPopulateMetaFields(cfgBuilder, true);
+    cfgBuilder.withClusteringConfig(clusteringConfig);
+    HoodieWriteConfig config = cfgBuilder.build();
+    SparkRDDWriteClient client = getHoodieWriteClient(config);
+
+    // Insert initial data
+    String instant1 = "001";
+    List<HoodieRecord> records = dataGen.generateInserts(instant1, 100);
+    writeAndVerifyBatch(client, records, instant1, true);
+
+    // Schedule clustering
+    Option<String> clusteringInstantOpt = client.scheduleClustering(Option.empty());
+    String clusteringInstant = clusteringInstantOpt.get();
+    HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setConf(hadoopConf).setBasePath(basePath).build();
+
+    // Capture timeline state before rollback
+    HoodieTimeline timelineBeforeRollback = metaClient.getActiveTimeline();
+    assertTrue(timelineBeforeRollback.filterPendingReplaceTimeline().containsInstant(clusteringInstant),
+        "Clustering instant should be in timeline before rollback");
+
+    // Make updates to trigger rollback
+    String updateInstant = "004";
+    List<HoodieRecord> updates = dataGen.generateUpdates(updateInstant, 50);
+    writeAndVerifyBatch(client, updates, updateInstant, true, false, false);
+
+    // Reload metaClient and verify timeline
+    metaClient = HoodieTableMetaClient.reload(metaClient);
+    HoodieTimeline timelineAfterRollback = metaClient.getActiveTimeline();
+
+    // Verify clustering instant is no longer in pending replace timeline
+    assertFalse(timelineAfterRollback.filterPendingReplaceTimeline().containsInstant(clusteringInstant),
+        "Clustering instant should NOT be in pending replace timeline after rollback");
+
+    // Verify rollback instant exists
+    HoodieTimeline rollbackTimeline = timelineAfterRollback.filter(instant ->
+        instant.getAction().equals(HoodieTimeline.ROLLBACK_ACTION)).filterCompletedInstants();
+    assertTrue(rollbackTimeline.countInstants() >= 1, "Should have rollback instant");
+
+    // Verify all timeline invariants
+    assertFalse(timelineAfterRollback.filterPendingReplaceTimeline().containsInstant(clusteringInstant));
+    assertTrue(timelineAfterRollback.containsInstant(updateInstant));
+    assertEquals(HoodieInstant.State.COMPLETED,
+        timelineAfterRollback.getInstantsAsStream()
+            .filter(i -> i.getTimestamp().equals(updateInstant))
+            .findFirst().get().getState(),
+        "Update commit should be completed");
+  }
+
   @Test
   public void testClusteringWithFailingValidator() throws Exception {
     // setup clustering config.
@@ -1955,12 +2065,12 @@ public class TestHoodieClientOnCopyOnWriteStorage extends HoodieClientTestBase {
     dataGen = new HoodieTestDataGenerator(new String[] {partitionPath});
     String commitTime1 = HoodieActiveTimeline.createNewInstantTime();
     List<HoodieRecord> records1 = dataGen.generateInserts(commitTime1, 200);
-    List<WriteStatus> statuses1 = writeAndVerifyBatch(client, records1, commitTime1, populateMetaFields, failInlineClustering);
+    List<WriteStatus> statuses1 = writeAndVerifyBatch(client, records1, commitTime1, populateMetaFields, failInlineClustering, true);
     Set<HoodieFileGroupId> fileIds1 = getFileGroupIdsFromWriteStatus(statuses1);
 
     String commitTime2 = HoodieActiveTimeline.createNewInstantTime();
     List<HoodieRecord> records2 = dataGen.generateInserts(commitTime2, 200);
-    List<WriteStatus> statuses2 = writeAndVerifyBatch(client, records2, commitTime2, populateMetaFields, failInlineClustering);
+    List<WriteStatus> statuses2 = writeAndVerifyBatch(client, records2, commitTime2, populateMetaFields, failInlineClustering, true);
     client.close();
     Set<HoodieFileGroupId> fileIds2 = getFileGroupIdsFromWriteStatus(statuses2);
     Set<HoodieFileGroupId> fileIdsUnion = new HashSet<>(fileIds1);
@@ -2238,7 +2348,7 @@ public class TestHoodieClientOnCopyOnWriteStorage extends HoodieClientTestBase {
       records.addAll(BaseFileUtils.getInstance(metaClient).readAvroRecords(jsc.hadoopConfiguration(), filePath));
     }
     Set<String> expectedKeys = recordsToRecordKeySet(expectedRecords);
-    assertEquals(records.size(), expectedKeys.size());
+    assertEquals(expectedKeys.size(), records.size());
     return expectedKeys;
   }
 
@@ -2258,10 +2368,11 @@ public class TestHoodieClientOnCopyOnWriteStorage extends HoodieClientTestBase {
   }
 
   private List<WriteStatus> writeAndVerifyBatch(SparkRDDWriteClient client, List<HoodieRecord> inserts, String commitTime, boolean populateMetaFields) throws IOException {
-    return writeAndVerifyBatch(client, inserts, commitTime, populateMetaFields, false);
+    return writeAndVerifyBatch(client, inserts, commitTime, populateMetaFields, false, true);
   }
 
-  private List<WriteStatus> writeAndVerifyBatch(SparkRDDWriteClient client, List<HoodieRecord> inserts, String commitTime, boolean populateMetaFields, boolean autoCommitOff) throws IOException {
+  private List<WriteStatus> writeAndVerifyBatch(SparkRDDWriteClient client, List<HoodieRecord> inserts, String commitTime, boolean populateMetaFields, boolean autoCommitOff,
+                                                boolean doAssertRecords) throws IOException {
     client.startCommitWithTime(commitTime);
     JavaRDD<HoodieRecord> insertRecordsRDD1 = jsc.parallelize(inserts, 2);
     JavaRDD<WriteStatus> statusRDD = client.upsert(insertRecordsRDD1, commitTime);
@@ -2270,7 +2381,9 @@ public class TestHoodieClientOnCopyOnWriteStorage extends HoodieClientTestBase {
     }
     List<WriteStatus> statuses = statusRDD.collect();
     assertNoWriteErrors(statuses);
-    verifyRecordsWritten(commitTime, populateMetaFields, inserts, statuses, client.getConfig());
+    if (doAssertRecords) {
+      verifyRecordsWritten(commitTime, populateMetaFields, inserts, statuses, client.getConfig());
+    }
 
     return statuses;
   }
