@@ -23,16 +23,18 @@ import org.apache.hudi.client.SparkRDDWriteClient;
 import org.apache.hudi.client.WriteStatus;
 import org.apache.hudi.client.common.HoodieSparkEngineContext;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
+import org.apache.hudi.common.config.HoodieStorageConfig;
 import org.apache.hudi.common.config.TypedProperties;
 import org.apache.hudi.common.fs.FSUtils;
-import org.apache.hudi.common.model.HoodieCommitMetadata;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.model.HoodieTableType;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.util.Option;
-import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.config.HoodieCompactionConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.estimator.AverageRecordSizeEstimator;
+import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.hadoop.CachingPath;
 
 import org.apache.hadoop.fs.FileSystem;
@@ -65,6 +67,10 @@ public class SparkSampleWritesUtils {
   private static final Logger LOG = LoggerFactory.getLogger(SparkSampleWritesUtils.class);
 
   public static Option<HoodieWriteConfig> getWriteConfigWithRecordSizeEstimate(JavaSparkContext jsc, Option<JavaRDD<HoodieRecord>> recordsOpt, HoodieWriteConfig writeConfig) {
+    return new SparkSampleWritesUtils().getWriteConfigWithRecordSizeEstimateInternal(jsc, recordsOpt, writeConfig);
+  }
+
+  protected Option<HoodieWriteConfig> getWriteConfigWithRecordSizeEstimateInternal(JavaSparkContext jsc, Option<JavaRDD<HoodieRecord>> recordsOpt, HoodieWriteConfig writeConfig) {
     if (!writeConfig.getBoolean(SAMPLE_WRITES_ENABLED)) {
       LOG.debug("Skip overwriting record size estimate as it's disabled.");
       return Option.empty();
@@ -76,21 +82,20 @@ public class SparkSampleWritesUtils {
     }
     try {
       String instantTime = getInstantFromTemporalAccessor(Instant.now().atZone(ZoneId.systemDefault()));
-      Pair<Boolean, String> result = doSampleWrites(jsc, recordsOpt, writeConfig, instantTime);
-      if (result.getLeft()) {
-        long avgSize = getAvgSizeFromSampleWrites(jsc, result.getRight());
-        LOG.info("Overwriting record size estimate to " + avgSize);
+      Option<Long> result = doSampleWrites(jsc, recordsOpt, writeConfig, instantTime);
+      if (result.isPresent()) {
+        LOG.info("Overwriting record size estimate to " + result.get());
         TypedProperties props = writeConfig.getProps();
-        props.put(COPY_ON_WRITE_RECORD_SIZE_ESTIMATE.key(), String.valueOf(avgSize));
+        props.put(COPY_ON_WRITE_RECORD_SIZE_ESTIMATE.key(), String.valueOf(result.get()));
         return Option.of(HoodieWriteConfig.newBuilder().withProperties(props).build());
       }
-    } catch (IOException e) {
+    } catch (HoodieException | IOException e) {
       LOG.error(String.format("Not overwriting record size estimate for table %s due to error when doing sample writes.", writeConfig.getTableName()), e);
     }
     return Option.empty();
   }
 
-  private static Pair<Boolean, String> doSampleWrites(JavaSparkContext jsc, Option<JavaRDD<HoodieRecord>> recordsOpt, HoodieWriteConfig writeConfig, String instantTime)
+  protected Option<Long> doSampleWrites(JavaSparkContext jsc, Option<JavaRDD<HoodieRecord>> recordsOpt, HoodieWriteConfig writeConfig, String instantTime)
       throws IOException {
     final String sampleWritesBasePath = getSampleWritesBasePath(jsc, writeConfig, instantTime);
     HoodieTableMetaClient.withPropertyBuilder()
@@ -100,6 +105,8 @@ public class SparkSampleWritesUtils {
         .initTable(jsc.hadoopConfiguration(), sampleWritesBasePath);
     TypedProperties props = writeConfig.getProps();
     props.put(SAMPLE_WRITES_ENABLED.key(), "false");
+    props.setProperty(HoodieCompactionConfig.PARQUET_SMALL_FILE_LIMIT.key(), "100"); // during average record size estimation, we only consider file's whose size is > (1.0 * small file size),
+    // where 1.0 = record size estimation threshold, and OOB small file size is 100Mb. Hence overriding the small file size to 100 bytes so that every file in commit metadata is accounted for.
     final HoodieWriteConfig sampleWriteConfig = HoodieWriteConfig.newBuilder()
         .withProps(props)
         .withTableServicesEnabled(false)
@@ -108,17 +115,19 @@ public class SparkSampleWritesUtils {
         .withBulkInsertParallelism(1)
         .withAutoCommit(true)
         .withPath(sampleWritesBasePath)
+        .withRecordSizeEstimatorAverageMetadataSize(writeConfig.getRecordSizeEstimatorAverageMetadataSize())
+        .withStorageConfig(HoodieStorageConfig.newBuilder().parquetCompressionCodec(writeConfig.getParquetCompressionCodec().name()).build())
         .build();
-    Pair<Boolean, String> emptyRes = Pair.of(false, null);
-    try (SparkRDDWriteClient sampleWriteClient = new SparkRDDWriteClient(new HoodieSparkEngineContext(jsc), sampleWriteConfig, Option.empty())) {
+    try (SparkRDDWriteClient sampleWriteClient =  new SparkRDDWriteClient(new HoodieSparkEngineContext(jsc), sampleWriteConfig, Option.empty())) {
       int size = writeConfig.getIntOrDefault(SAMPLE_WRITES_SIZE);
-      return recordsOpt.map(records -> {
+      if (recordsOpt.isPresent()) {
+        JavaRDD<HoodieRecord> records = recordsOpt.get();
         List<HoodieRecord> samples = records.coalesce(1).take(size);
         if (samples.isEmpty()) {
-          return emptyRes;
+          return Option.empty();
         }
         sampleWriteClient.startCommitWithTime(instantTime);
-        JavaRDD<WriteStatus> writeStatusRDD = sampleWriteClient.bulkInsert(jsc.parallelize(samples, 1), instantTime);
+        JavaRDD<WriteStatus> writeStatusRDD = bulkIngestAndGetWriteStatus(sampleWriteClient, jsc, samples, instantTime);
         if (writeStatusRDD.filter(WriteStatus::hasErrors).count() > 0) {
           LOG.error(String.format("sample writes for table %s failed with errors.", writeConfig.getTableName()));
           if (LOG.isTraceEnabled()) {
@@ -129,12 +138,23 @@ public class SparkSampleWritesUtils {
                   LOG.trace(String.format("Error for key: %s", key), throwable));
             });
           }
-          return emptyRes;
+          return Option.empty();
         } else {
-          return Pair.of(true, sampleWritesBasePath);
+          try {
+            return Option.of(getAvgSizeFromSampleWrites(jsc, sampleWritesBasePath, writeConfig));
+          } catch (IOException e) {
+            LOG.error("Failed to compute average record size estimate", e);
+            return Option.empty();
+          }
         }
-      }).orElse(emptyRes);
+      } else {
+        return Option.empty();
+      }
     }
+  }
+
+  protected JavaRDD<WriteStatus> bulkIngestAndGetWriteStatus(SparkRDDWriteClient sparkRDDWriteClient, JavaSparkContext jsc, List<HoodieRecord> recordsToIngest, String instantTime) {
+    return sparkRDDWriteClient.bulkInsert(jsc.parallelize(recordsToIngest, 1), instantTime);
   }
 
   private static String getSampleWritesBasePath(JavaSparkContext jsc, HoodieWriteConfig writeConfig, String instantTime) throws IOException {
@@ -146,15 +166,11 @@ public class SparkSampleWritesUtils {
     return basePath.toString();
   }
 
-  private static long getAvgSizeFromSampleWrites(JavaSparkContext jsc, String sampleWritesBasePath) throws IOException {
+  private static long getAvgSizeFromSampleWrites(JavaSparkContext jsc, String sampleWritesBasePath, HoodieWriteConfig writeConfig) throws IOException {
     HoodieTableMetaClient metaClient = getMetaClient(jsc, sampleWritesBasePath);
     Option<HoodieInstant> lastInstantOpt = metaClient.getCommitTimeline().filterCompletedInstants().lastInstant();
     checkState(lastInstantOpt.isPresent(), "The only completed instant should be present in sample_writes table.");
-    HoodieInstant instant = lastInstantOpt.get();
-    HoodieCommitMetadata commitMetadata = metaClient.getCommitTimeline().deserializeInstantContent(instant, HoodieCommitMetadata.class);
-    long totalBytesWritten = commitMetadata.fetchTotalBytesWritten();
-    long totalRecordsWritten = commitMetadata.fetchTotalRecordsWritten();
-    return (long) Math.ceil((1.0 * totalBytesWritten) / totalRecordsWritten);
+    return new AverageRecordSizeEstimator(writeConfig).averageBytesPerRecord(metaClient.getCommitTimeline());
   }
 
   private static HoodieTableMetaClient getMetaClient(JavaSparkContext jsc, String basePath) {
