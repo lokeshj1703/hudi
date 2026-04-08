@@ -1216,3 +1216,8 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-04-07 16:23:09] [release-v1.224.0] ---
 [ENG-8593][CHERRYPICK] Fixing clustering and row writer flows and enhancing tests (#1777)
 [AUDIT-1071]: Changelog for release-v1.223.0 (#1804)
+
+--- [2026-04-08 16:26:15] [release-v1.225.0] ---
+[ENG-38682][CHERRYPICK] Enabling sample writes based record size estimation for fresh table (#1778)
+[ENG-38583] feat: Add hudi-azure-bundle (#1806)
+[AUDIT-1071]: Changelog for release-v1.224.0 (#1810)
