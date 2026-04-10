@@ -1221,3 +1221,6 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 [ENG-38682][CHERRYPICK] Enabling sample writes based record size estimation for fresh table (#1778)
 [ENG-38583] feat: Add hudi-azure-bundle (#1806)
 [AUDIT-1071]: Changelog for release-v1.224.0 (#1810)
+
+--- [2026-04-10 05:02:31] [release-v1.226.0] ---
+[AUDIT-1071]: Changelog for release-v1.225.0 (#1816)
