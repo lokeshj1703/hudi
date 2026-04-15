@@ -1224,3 +1224,6 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 
 --- [2026-04-10 05:02:31] [release-v1.226.0] ---
 [AUDIT-1071]: Changelog for release-v1.225.0 (#1816)
+
+--- [2026-04-15 09:47:55] [release-v1.227.0] ---
+[AUDIT-2305]: Changelog for release-v1.226.0 (#1820)
