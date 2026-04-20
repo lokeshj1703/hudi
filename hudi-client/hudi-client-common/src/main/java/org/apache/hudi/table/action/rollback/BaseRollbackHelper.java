@@ -23,6 +23,7 @@ import org.apache.hudi.common.HoodieRollbackStat;
 import org.apache.hudi.common.config.SerializableConfiguration;
 import org.apache.hudi.common.data.HoodiePairData;
 import org.apache.hudi.common.engine.HoodieEngineContext;
+import org.apache.hudi.common.engine.TaskContextSupplier;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.function.SerializableFunction;
 import org.apache.hudi.common.function.SerializablePairFunction;
@@ -68,7 +69,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static org.apache.hudi.common.table.log.HoodieLogFormat.UNKNOWN_WRITE_TOKEN;
 import static org.apache.hudi.table.action.rollback.RollbackUtils.groupSerializableRollbackRequestsBasedOnFileGroup;
 
 /**
@@ -157,7 +157,7 @@ public class BaseRollbackHelper implements Serializable {
     // Key: partition path, Value: map of (fileId, baseInstant) -> (latest log version, write token)
     Map<String, Map<Pair<String, String>, Pair<Integer, String>>> partitionToLatestLogVersions = enableFileSliceOptimization
         ? preComputeLatestLogVersionsForMorLogFiles(groupedRollbackRequests) : Collections.EMPTY_MAP;
-
+    TaskContextSupplier taskContextSupplier = context.getTaskContextSupplier();
     return context.flatMap(groupedRollbackRequests, (SerializableFunction<SerializableHoodieRollbackRequest, Stream<Pair<String, HoodieRollbackStat>>>) rollbackRequest -> {
       List<String> filesToBeDeleted = rollbackRequest.getFilesToBeDeleted();
       if (!filesToBeDeleted.isEmpty()) {
@@ -184,24 +184,24 @@ public class BaseRollbackHelper implements Serializable {
               .withLogWriteCallback(getRollbackLogMarkerCallback(writeMarkers, partitionPath, fileId))
               .withFileExtension(HoodieLogFile.DELTA_EXTENSION);
 
+          String writeToken = makeWriteToken(taskContextSupplier);
+          writerBuilder.withLogWriteToken(writeToken);
+          writerBuilder.withRolloverLogWriteToken(writeToken);
+
           // Use pre-computed log version if available
           if (!partitionToLatestLogVersions.isEmpty()) {
             Map<Pair<String, String>, Pair<Integer, String>> fileIdToVersion = partitionToLatestLogVersions.get(partitionPath);
             if (fileIdToVersion != null) {
               Pair<Integer, String> latestVersionWriteTokenPair = fileIdToVersion.get(Pair.of(fileId, latestBaseInstant));
               if (latestVersionWriteTokenPair != null) {
-                // set log version and log write token.
+                // set log version.
                 writerBuilder.withLogVersion(latestVersionWriteTokenPair.getKey() + 1);
-                // should we set the write token as well. As of now, our rollback log files are written with "1-0-1" as write token.
-                writerBuilder.withLogWriteToken(UNKNOWN_WRITE_TOKEN);
               } else {
                 // no log files found for the fileId of interest.
                 // On rare occasions we could hit this code block. say for the commit of interest, markers were added, but before adding the log file, the writer crashed.
                 // during rollback planning, we will account for the file id of interest due to presence of log file marker. but while listing fs during rollback execution,
                 // we may not find any log files only.
                 writerBuilder.withLogVersion(HoodieLogFile.LOGFILE_BASE_VERSION);
-                writerBuilder.withRolloverLogWriteToken(UNKNOWN_WRITE_TOKEN);
-                writerBuilder.withLogWriteToken(UNKNOWN_WRITE_TOKEN);
               }
             }
           }
@@ -266,6 +266,25 @@ public class BaseRollbackHelper implements Serializable {
             .stream();
       }
     }, numPartitions);
+  }
+
+  /**
+   * Generate a write token based on the currently running spark task and its place in the spark dag.
+   */
+  private String makeWriteToken(TaskContextSupplier taskContextSupplier) {
+    return FSUtils.makeWriteToken(getPartitionId(taskContextSupplier), getStageId(taskContextSupplier), getAttemptId(taskContextSupplier));
+  }
+
+  protected int getPartitionId(TaskContextSupplier taskContextSupplier) {
+    return taskContextSupplier.getPartitionIdSupplier().get();
+  }
+
+  protected int getStageId(TaskContextSupplier taskContextSupplier) {
+    return taskContextSupplier.getStageIdSupplier().get();
+  }
+
+  protected long getAttemptId(TaskContextSupplier taskContextSupplier) {
+    return taskContextSupplier.getAttemptIdSupplier().get();
   }
 
   /**

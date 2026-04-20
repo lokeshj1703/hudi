@@ -28,7 +28,8 @@ import org.apache.hudi.common.table.HoodieTableConfig;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
-import org.apache.hudi.common.testutils.FileCreateUtils;
+import org.apache.hudi.common.fs.FSUtils;
+import org.apache.hudi.common.model.HoodieLogFile;
 import org.apache.hudi.common.testutils.HoodieTestUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.collection.Pair;
@@ -120,10 +121,13 @@ class TestBaseRollbackHelper extends HoodieRollbackTestBase {
         new HoodieInstant(true, HoodieTimeline.DELTA_COMMIT_ACTION, instantToRollback),
         rollbackRequests, true, 5, false);
     validateStateAfterRollback(rollbackRequests);
+    // Rollback log files are written with write token from TaskContextSupplier.
+    // LocalTaskContextSupplier returns partitionId=0, stageId=0, attemptId=0 -> write token "0-0-0".
+    String rollbackWriteToken = FSUtils.makeWriteToken(0, 0, 0);
     Path rollbackLogPath1 = new Path(new Path(basePath, partition2),
-        FileCreateUtils.logFileName(baseInstantTimeOfLogFiles, logFileId1, 2));
+        FSUtils.makeLogFileName(logFileId1, HoodieLogFile.DELTA_EXTENSION, baseInstantTimeOfLogFiles, 2, rollbackWriteToken));
     Path rollbackLogPath2 = new Path(new Path(basePath, partition2),
-        FileCreateUtils.logFileName(baseInstantTimeOfLogFiles, logFileId2, ROLLBACK_LOG_VERSION));
+        FSUtils.makeLogFileName(logFileId2, HoodieLogFile.DELTA_EXTENSION, baseInstantTimeOfLogFiles, ROLLBACK_LOG_VERSION, rollbackWriteToken));
     List<Pair<String, HoodieRollbackStat>> expected = new ArrayList<>();
     expected.add(Pair.of(partition1,
         HoodieRollbackStat.newBuilder()
@@ -186,8 +190,9 @@ class TestBaseRollbackHelper extends HoodieRollbackTestBase {
         new HoodieInstant(true, HoodieTimeline.DELTA_COMMIT_ACTION, instantToRollback),
         rollbackRequests, true, 5, false);
     validateStateAfterRollback(rollbackRequests);
+    String rollbackWriteToken = FSUtils.makeWriteToken(0, 0, 0);
     Path rollbackLogPath = new Path(new Path(basePath, partition),
-        FileCreateUtils.logFileName(baseInstantTimeOfLogFiles, logFileId, ROLLBACK_LOG_VERSION));
+        FSUtils.makeLogFileName(logFileId, HoodieLogFile.DELTA_EXTENSION, baseInstantTimeOfLogFiles, ROLLBACK_LOG_VERSION, rollbackWriteToken));
     List<Pair<String, HoodieRollbackStat>> expected = new ArrayList<>();
     expected.add(Pair.of(partition,
         HoodieRollbackStat.newBuilder()
