@@ -191,6 +191,10 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
 
   protected abstract HoodieTable getHoodieTable(HoodieWriteConfig writeConfig, HoodieTableMetaClient metaClient);
 
+  protected HoodieTableMetaClient getMetadataMetaClient() {
+    return metadataMetaClient;
+  }
+
   private void initMetadataReader() {
     if (this.metadata != null) {
       this.metadata.close();
@@ -1576,10 +1580,10 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
   }
 
   protected void cleanIfNecessary(BaseHoodieWriteClient writeClient, String instantTime) {
-    Option<HoodieInstant> lastCompletedCompactionInstant = metadataMetaClient
+    Option<HoodieInstant> lastCompletedCompactionInstant = getMetadataMetaClient()
         .getCommitTimeline().filterCompletedInstants().lastInstant();
     if (lastCompletedCompactionInstant.isPresent()
-        && metadataMetaClient.getActiveTimeline().filterCompletedInstants()
+        && getMetadataMetaClient().getActiveTimeline().filterCompletedInstants()
         .findInstantsAfter(lastCompletedCompactionInstant.get().getTimestamp()).countInstants() < 3) {
       // do not clean the log files immediately after compaction to give some buffer time for metadata table reader,
       // because there is case that the reader has prepared for the log file readers already before the compaction completes
@@ -1592,7 +1596,17 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
     // Trigger cleaning with suffixes based on the same instant time. This ensures that any future
     // delta commits synced over will not have an instant time lesser than the last completed instant on the
     // metadata table.
-    writeClient.clean(HoodieTableMetadataUtil.createCleanTimestamp(instantTime));
+    String cleanInstant = HoodieTableMetadataUtil.createCleanTimestamp(instantTime);
+
+    // Only skip if clean is already completed. If it's inflight/requested (e.g. from a prior partial failure),
+    // we still call writeClient.clean() so it can execute the pending clean to completion.
+    boolean cleanAlreadyCompleted = getMetadataMetaClient().getActiveTimeline()
+        .getCleanerTimeline().filterCompletedInstants().containsInstant(cleanInstant);
+    if (cleanAlreadyCompleted) {
+      LOG.info("Clean instant {} already exists in timeline, skipping this operation", cleanInstant);
+    } else {
+      writeClient.clean(cleanInstant);
+    }
     writeClient.lazyRollbackFailedIndexing();
   }
 
