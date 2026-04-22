@@ -1236,3 +1236,6 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-04-22 02:10:49] [release-v1.229.0] ---
 [ENG-40322] fix: Skip pre-compaction rollback metadata reads in getValidInstantTimestamps (#1834)
 [AUDIT-1071]: Changelog for release-v1.228.0 (#1832)
+
+--- [2026-04-22 06:12:30] [release-v1.230.0] ---
+[AUDIT-1071]: Changelog for release-v1.229.0 (#1837)
