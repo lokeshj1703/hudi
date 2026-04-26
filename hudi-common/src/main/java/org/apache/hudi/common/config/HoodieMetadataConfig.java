@@ -770,6 +770,11 @@ public final class HoodieMetadataConfig extends HoodieConfig {
       return this;
     }
 
+    public Builder withEnablePartitionedRecordIndex(boolean enabled) {
+      metadataConfig.setValue(PARTITIONED_RECORD_INDEX_ENABLE_PROP, String.valueOf(enabled));
+      return this;
+    }
+
     public Builder withRecordIndexFileGroupCount(int minCount, int maxCount) {
       metadataConfig.setValue(RECORD_INDEX_MIN_FILE_GROUP_COUNT_PROP, String.valueOf(minCount));
       metadataConfig.setValue(RECORD_INDEX_MAX_FILE_GROUP_COUNT_PROP, String.valueOf(maxCount));
