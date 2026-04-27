@@ -60,6 +60,91 @@ class TestRecordLevelIndex extends RecordLevelIndexTestBase {
   }
 
   @Test
+  def testRLIInitializationForMorWithOnlyBaseFiles(): Unit = {
+    // Test the optimized RLI initialization path for MOR tables that only have base files (no log files)
+    // This should use the faster readRecordKeysFromBaseFiles path instead of readRecordKeysFromFileSliceSnapshot
+    val hudiOpts = commonOpts ++ Map(
+      DataSourceWriteOptions.TABLE_TYPE.key -> HoodieTableType.MERGE_ON_READ.name()
+    )
+
+    // First insert - creates base files
+    doWriteAndValidateDataAndRecordIndex(hudiOpts,
+      operation = DataSourceWriteOptions.INSERT_OPERATION_OPT_VAL,
+      saveMode = SaveMode.Overwrite)
+
+    // Second insert - creates more base files (INSERT doesn't create log files in MOR)
+    doWriteAndValidateDataAndRecordIndex(hudiOpts,
+      operation = DataSourceWriteOptions.INSERT_OPERATION_OPT_VAL,
+      saveMode = SaveMode.Append)
+
+    // Verify no log files exist by checking commit metadata
+    val timeline = metaClient.reloadActiveTimeline().getCommitsTimeline.filterCompletedInstants()
+    val lastInstant = timeline.lastInstant().get()
+    val commitMetadata = timeline.deserializeInstantContent(lastInstant, classOf[HoodieCommitMetadata])
+    val hasLogFiles = commitMetadata.getPartitionToWriteStats.values().asScala
+      .flatMap(_.asScala)
+      .exists(writeStat => writeStat.getPath.contains(".log"))
+
+    assertTrue(!hasLogFiles, "MOR table should not have log files after INSERT operations")
+
+    // Now drop and re-initialize RLI - this should use the optimized base-file-only path
+    val writeConfig = getWriteConfig(hudiOpts)
+    metadataWriter(writeConfig).dropMetadataPartitions(Collections.singletonList(MetadataPartitionType.RECORD_INDEX))
+    assertEquals(0, getFileGroupCountForRecordIndex(writeConfig))
+
+    // Re-enable RLI - initialization should use the optimized path for base-file-only file slices
+    doWriteAndValidateDataAndRecordIndex(hudiOpts,
+      operation = DataSourceWriteOptions.INSERT_OPERATION_OPT_VAL,
+      saveMode = SaveMode.Append)
+
+    // Validate the RLI was correctly initialized
+    validateDataAndRecordIndices(hudiOpts)
+  }
+
+  @Test
+  def testRLIInitializationForMorWithLogFiles(): Unit = {
+    // Test that MOR tables with log files still use the merge path (not the optimized path)
+    val hudiOpts = commonOpts ++ Map(
+      DataSourceWriteOptions.TABLE_TYPE.key -> HoodieTableType.MERGE_ON_READ.name(),
+      HoodieCompactionConfig.INLINE_COMPACT.key() -> "false",
+      HoodieCompactionConfig.PARQUET_SMALL_FILE_LIMIT.key() -> "0"
+    )
+
+    // First insert - creates base files
+    doWriteAndValidateDataAndRecordIndex(hudiOpts,
+      operation = DataSourceWriteOptions.INSERT_OPERATION_OPT_VAL,
+      saveMode = SaveMode.Overwrite)
+
+    // Upsert - creates log files
+    doWriteAndValidateDataAndRecordIndex(hudiOpts,
+      operation = DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL,
+      saveMode = SaveMode.Append)
+
+    // Verify log files exist by checking commit metadata
+    val timeline = metaClient.reloadActiveTimeline().getCommitsTimeline.filterCompletedInstants()
+    val lastInstant = timeline.lastInstant().get()
+    val commitMetadata = timeline.deserializeInstantContent(lastInstant, classOf[HoodieCommitMetadata])
+    val hasLogFiles = commitMetadata.getPartitionToWriteStats.values().asScala
+      .flatMap(_.asScala)
+      .exists(writeStat => writeStat.getPath.contains(".log"))
+
+    assertTrue(hasLogFiles, "MOR table should have log files after UPSERT operations")
+
+    // Drop and re-initialize RLI - this should use the merge path due to log files
+    val writeConfig = getWriteConfig(hudiOpts)
+    metadataWriter(writeConfig).dropMetadataPartitions(Collections.singletonList(MetadataPartitionType.RECORD_INDEX))
+    assertEquals(0, getFileGroupCountForRecordIndex(writeConfig))
+
+    // Re-enable RLI - initialization should use the merge path for file slices with log files
+    doWriteAndValidateDataAndRecordIndex(hudiOpts,
+      operation = DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL,
+      saveMode = SaveMode.Append)
+
+    // Validate the RLI was correctly initialized with merged data
+    validateDataAndRecordIndices(hudiOpts)
+  }
+
+  @Test
   def testRLIInitializationForMorGlobalIndex(): Unit = {
     val tableType = HoodieTableType.MERGE_ON_READ
     val hudiOpts = commonOpts + (DataSourceWriteOptions.TABLE_TYPE.key -> tableType.name()) +

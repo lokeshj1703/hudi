@@ -626,25 +626,49 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
       for (String partition : partitions) {
         fsView.getLatestMergedFileSlicesBeforeOrOn(partition, latestCommit).forEach(fs -> {
           latestMergedPartitionFileSliceList.add(Pair.of(partition, fs));
-          // Extract base files for sampling
           if (fs.getBaseFile().isPresent()) {
             partitionBaseFilePairs.add(Pair.of(partition, fs.getBaseFile().get()));
           }
         });
       }
 
-      LOG.info("Initializing record index from {} file slices ({} with base files)",
-          latestMergedPartitionFileSliceList.size(), partitionBaseFilePairs.size());
+      if (latestMergedPartitionFileSliceList.isEmpty()) {
+        records = engineContext.emptyHoodieData();
+      } else {
+        // Optimization: Check if all file slices contain only base files (no log files)
+        // If true, we can use the more efficient readRecordKeysFromBaseFiles path
+        boolean allFileSlicesHaveOnlyBaseFiles = latestMergedPartitionFileSliceList.stream()
+            .allMatch(pair -> {
+              FileSlice fileSlice = pair.getValue();
+              return fileSlice.getBaseFile().isPresent() && !fileSlice.getLogFiles().findAny().isPresent();
+            });
 
-      // Read ALL records for actual RLI initialization (includes log files for MOR)
-      records = readRecordKeysFromFileSliceSnapshot(
-          engineContext,
-          latestMergedPartitionFileSliceList,
-          maxParallelism,
-          this.getClass().getSimpleName(),
-          dataMetaClient,
-          dataWriteConfig,
-          hoodieTable);
+        if (allFileSlicesHaveOnlyBaseFiles && !latestMergedPartitionFileSliceList.isEmpty()) {
+          LOG.info("Initializing record index from " + partitionBaseFilePairs.size() + " base files in "
+              + partitions.size() + " partitions (optimized path for MOR table with no log files)");
+
+          records = readRecordKeysFromBaseFiles(
+              engineContext,
+              partitionBaseFilePairs,
+              false,
+              maxParallelism,
+              dataWriteConfig.getBasePath(),
+              hadoopConf,
+              this.getClass().getSimpleName(),
+              dataWriteConfig.isPartitionedRecordIndexEnabled());
+        } else {
+          LOG.info("Initializing record index from " + latestMergedPartitionFileSliceList.size() + " file slices in "
+              + partitions.size() + " partitions");
+          records = readRecordKeysFromFileSliceSnapshot(
+              engineContext,
+              latestMergedPartitionFileSliceList,
+              maxParallelism,
+              this.getClass().getSimpleName(),
+              dataMetaClient,
+              dataWriteConfig,
+              hoodieTable);
+        }
+      }
     }
 
     // Get min/max file group count bounds
