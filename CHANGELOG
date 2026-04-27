@@ -1239,3 +1239,9 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 
 --- [2026-04-22 06:12:30] [release-v1.230.0] ---
 [AUDIT-1071]: Changelog for release-v1.229.0 (#1837)
+
+--- [2026-04-27 06:08:39] [release-v1.231.0] ---
+[ENG-38436][CHERRYPICK] Optimizing RLI bootstrap for MOR when there are no log files (#1763)
+[ENG-32548]feat(metadata): Optimize RLI initialization by reading from parquet metadata to fetch record count (#1779)
+[AUDIT-2324][CHERRYPICK] Add additional parameter to FlinkConsistentBucketUpdateStrategy (#1840)
+[AUDIT-2324]: Changelog for release-v1.230.0 (#1839)
