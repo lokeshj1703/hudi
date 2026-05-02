@@ -1245,3 +1245,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 [ENG-32548]feat(metadata): Optimize RLI initialization by reading from parquet metadata to fetch record count (#1779)
 [AUDIT-2324][CHERRYPICK] Add additional parameter to FlinkConsistentBucketUpdateStrategy (#1840)
 [AUDIT-2324]: Changelog for release-v1.230.0 (#1839)
+
+--- [2026-05-02 16:16:25] [release-v1.232.0] ---
+[ENG-40833][CHERRYPICK] Fixing KafkaAvroSchemaDeserializer to account for all deseralize methods (#1852)
+[AUDIT-2412]: Changelog for release-v1.231.0 (#1844)
