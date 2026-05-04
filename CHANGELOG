@@ -1249,3 +1249,6 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-05-02 16:16:25] [release-v1.232.0] ---
 [ENG-40833][CHERRYPICK] Fixing KafkaAvroSchemaDeserializer to account for all deseralize methods (#1852)
 [AUDIT-2412]: Changelog for release-v1.231.0 (#1844)
+
+--- [2026-05-04 06:04:37] [release-v1.233.0] ---
+[AUDIT-1071]: Changelog for release-v1.232.0 (#1854)
