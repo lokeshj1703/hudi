@@ -113,8 +113,12 @@ public abstract class MultipleSparkJobExecutionStrategy<T>
         Math.min(clusteringPlan.getInputGroups().size(), writeConfig.getClusteringMaxParallelism()),
         new CustomizedThreadFactory("clustering-job-group", true));
     try {
-      boolean canUseRowWriter = getWriteConfig().getBooleanOrDefault("hoodie.datasource.write.row.writer.enable", true)
-          && HoodieDataTypeUtils.canUseRowWriter(schema, engineContext.hadoopConfiguration());
+      // shouldForceRowWriter() opts in; canUseRowWriter must still gate it so unsupported
+      // schemas (decimal + list/map with WRITE_OLD_LIST_STRUCTURE=false) don't fail at write.
+      boolean canUseRowWriter =
+          (shouldForceRowWriter()
+              || getWriteConfig().getBooleanOrDefault("hoodie.datasource.write.row.writer.enable", true))
+              && HoodieDataTypeUtils.canUseRowWriter(schema, engineContext.hadoopConfiguration());
       if (canUseRowWriter) {
         HoodieDataTypeUtils.tryOverrideParquetWriteLegacyFormatProperty(writeConfig.getProps(), schema);
       }
@@ -185,6 +189,15 @@ public abstract class MultipleSparkJobExecutionStrategy<T>
                                                                           final List<HoodieFileGroupId> fileGroupIdList,
                                                                           final boolean shouldPreserveHoodieMetadata,
                                                                           final Map<String, String> extraMetadata);
+
+  /**
+   * Subclasses can override to force the Row writer path regardless of
+   * {@code hoodie.datasource.write.row.writer.enable}. Returning {@code true}
+   * disables the RDD path for this strategy. Default {@code false}.
+   */
+  protected boolean shouldForceRowWriter() {
+    return false;
+  }
 
   protected BulkInsertPartitioner<Dataset<Row>> getRowPartitioner(Map<String, String> strategyParams,
                                                                   Schema schema) {

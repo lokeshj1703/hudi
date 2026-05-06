@@ -77,10 +77,10 @@ public class TimelineServerBasedWriteMarkers extends WriteMarkers {
         table.getConfig().getViewStorageConfig());
   }
 
-  TimelineServerBasedWriteMarkers(String basePath,
-                                  String markerFolderPath,
-                                  String instantTime,
-                                  FileSystemViewStorageConfig  fileSystemViewStorageConfig) {
+  public TimelineServerBasedWriteMarkers(String basePath,
+                                         String markerFolderPath,
+                                         String instantTime,
+                                         FileSystemViewStorageConfig fileSystemViewStorageConfig) {
     super(basePath, markerFolderPath, instantTime);
     this.timelineServiceClient = new TimelineServiceClient(fileSystemViewStorageConfig);
   }

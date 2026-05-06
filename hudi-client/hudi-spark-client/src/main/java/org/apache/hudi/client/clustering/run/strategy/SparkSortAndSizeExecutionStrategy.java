@@ -19,12 +19,14 @@
 package org.apache.hudi.client.clustering.run.strategy;
 
 import org.apache.hudi.HoodieDatasetBulkInsertHelper;
+import org.apache.hudi.avro.model.HoodieClusteringGroup;
 import org.apache.hudi.client.WriteStatus;
 import org.apache.hudi.common.config.HoodieStorageConfig;
 import org.apache.hudi.common.data.HoodieData;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.model.HoodieFileGroupId;
 import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.util.Option;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.io.CreateHandleFactory;
 import org.apache.hudi.table.BulkInsertPartitioner;
@@ -39,20 +41,127 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Clustering Strategy based on following.
  * 1) Spark execution engine.
  * 2) Uses bulk_insert to write data into new files.
+ *
+ * <p>When a {@link ClusteringGroupWriter} provider is registered on the runtime classpath
+ * and reports {@link ClusteringGroupWriter#isEnabled()}, this strategy delegates each input
+ * group to the writer. The Row path is forced (subject to
+ * {@link org.apache.hudi.HoodieDataTypeUtils#canUseRowWriter}) so the writer always sees the
+ * Dataset-based pipeline. Per-group fallback to the default Spark path happens whenever the
+ * writer returns {@link Option#empty()}.
  */
 public class SparkSortAndSizeExecutionStrategy<T>
     extends MultipleSparkJobExecutionStrategy<T> {
   private static final Logger LOG = LoggerFactory.getLogger(SparkSortAndSizeExecutionStrategy.class);
 
+  /** Lazily initialized; write config schema is constant for a given strategy instance. */
+  private final AtomicReference<Schema> cachedSchema = new AtomicReference<>();
+
   public SparkSortAndSizeExecutionStrategy(HoodieTable table,
                                            HoodieEngineContext engineContext,
                                            HoodieWriteConfig writeConfig) {
     super(table, engineContext, writeConfig);
+  }
+
+  @Override
+  protected boolean shouldForceRowWriter() {
+    Option<ClusteringGroupWriter> writer = ClusteringGroupWriterRegistry.get();
+    return writer.isPresent() && writer.get().isEnabled();
+  }
+
+  @Override
+  protected CompletableFuture<HoodieData<WriteStatus>> runClusteringForGroupAsyncAsRow(
+      HoodieClusteringGroup clusteringGroup,
+      Map<String, String> strategyParams,
+      boolean shouldPreserveHoodieMetadata,
+      String instantTime,
+      ExecutorService clusteringExecutorService) {
+    Option<CompletableFuture<HoodieData<WriteStatus>>> delegated = tryDelegateToGroupWriter(
+        clusteringGroup, strategyParams, shouldPreserveHoodieMetadata, instantTime, clusteringExecutorService);
+    if (delegated.isPresent()) {
+      return delegated.get();
+    }
+    return runSuperRunClusteringForGroupAsyncAsRow(
+        clusteringGroup, strategyParams, shouldPreserveHoodieMetadata, instantTime, clusteringExecutorService);
+  }
+
+  /**
+   * Indirection over {@code super.runClusteringForGroupAsyncAsRow} so unit tests can
+   * verify the fallback contract without bootstrapping a real {@link HoodieTable}. Tests
+   * override only this method; the production {@code runClusteringForGroupAsyncAsRow}
+   * routing logic is exercised unchanged.
+   */
+  CompletableFuture<HoodieData<WriteStatus>> runSuperRunClusteringForGroupAsyncAsRow(
+      HoodieClusteringGroup clusteringGroup,
+      Map<String, String> strategyParams,
+      boolean shouldPreserveHoodieMetadata,
+      String instantTime,
+      ExecutorService clusteringExecutorService) {
+    return super.runClusteringForGroupAsyncAsRow(
+        clusteringGroup, strategyParams, shouldPreserveHoodieMetadata, instantTime, clusteringExecutorService);
+  }
+
+  /**
+   * Routing for the {@link ClusteringGroupWriter} SPI. Returns the writer's future when a
+   * writer is registered, reports enabled, AND can serve the group. Returns
+   * {@link Option#empty()} otherwise so the caller falls back to the default path.
+   *
+   * <p>Package-private so tests can exercise the routing logic directly without needing a
+   * real {@link HoodieTable} to drive {@code super.runClusteringForGroupAsyncAsRow}.
+   */
+  Option<CompletableFuture<HoodieData<WriteStatus>>> tryDelegateToGroupWriter(
+      HoodieClusteringGroup clusteringGroup,
+      Map<String, String> strategyParams,
+      boolean shouldPreserveHoodieMetadata,
+      String instantTime,
+      ExecutorService clusteringExecutorService) {
+    Option<ClusteringGroupWriter> writerOpt = ClusteringGroupWriterRegistry.get();
+    if (!writerOpt.isPresent() || !writerOpt.get().isEnabled()) {
+      return Option.empty();
+    }
+    ClusteringGroupWriter writer = writerOpt.get();
+    LOG.info("Delegating clustering group (firstFileId={}, instant={}) to ClusteringGroupWriter '{}'",
+        firstFileGroupId(clusteringGroup), instantTime, writer.name());
+    ClusteringGroupWriteContext context = ClusteringGroupWriteContext.builder()
+        .clusteringGroup(clusteringGroup)
+        .strategyParams(strategyParams)
+        .shouldPreserveHoodieMetadata(shouldPreserveHoodieMetadata)
+        .instantTime(instantTime)
+        .clusteringExecutorService(clusteringExecutorService)
+        .schema(getCachedSchema())
+        .table(getHoodieTable())
+        .writeConfig(getWriteConfig())
+        .build();
+    Option<CompletableFuture<HoodieData<WriteStatus>>> result = writer.runClusteringForGroupAsync(context);
+    if (!result.isPresent()) {
+      LOG.info("ClusteringGroupWriter '{}' declined to serve group (firstFileId={}, instant={}); "
+          + "falling back to the default Spark bulk-insert path.",
+          writer.name(), firstFileGroupId(clusteringGroup), instantTime);
+    }
+    return result;
+  }
+
+  private static String firstFileGroupId(HoodieClusteringGroup clusteringGroup) {
+    if (clusteringGroup.getSlices() == null || clusteringGroup.getSlices().isEmpty()) {
+      return "<empty-group>";
+    }
+    return clusteringGroup.getSlices().get(0).getFileId();
+  }
+
+  private Schema getCachedSchema() {
+    Schema local = cachedSchema.get();
+    if (local != null) {
+      return local;
+    }
+    Schema parsed = new Schema.Parser().parse(getWriteConfig().getSchema());
+    return cachedSchema.compareAndSet(null, parsed) ? parsed : cachedSchema.get();
   }
 
   @Override
