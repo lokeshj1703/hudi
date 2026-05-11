@@ -1256,3 +1256,6 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-05-06 02:36:04] [release-v1.234.0] ---
 [ENG-39860] feat: Add ClusteringGroupWriter SPI for pluggable clustering writes (#1807)
 [AUDIT-2425]: Changelog for release-v1.233.0 (#1856)
+
+--- [2026-05-11 12:13:39] [release-v1.235.0] ---
+[AUDIT-1071]: Changelog for release-v1.234.0 (#1859)
