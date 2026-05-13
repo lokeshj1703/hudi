@@ -1259,3 +1259,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 
 --- [2026-05-11 12:13:39] [release-v1.235.0] ---
 [AUDIT-1071]: Changelog for release-v1.234.0 (#1859)
+
+--- [2026-05-13 16:46:50] [release-v1.236.0] ---
+[ENG-41591][CHERRYPICK] Bump protobuf-java and protoc to 3.25.8 (#1866)
+[AUDIT-2441]: Changelog for release-v1.235.0 (#1865)
