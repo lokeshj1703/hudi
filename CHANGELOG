@@ -1266,3 +1266,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 
 --- [2026-05-18 05:33:03] [release-v1.237.0] ---
 [AUDIT-1071]: Changelog for release-v1.236.0 (#1869)
+
+--- [2026-05-22 16:44:47] [release-v1.238.0] ---
+[ENG-41644] Normalize hudi table base path in implicit-key lock providers (#1877)
+[AUDIT-2458]: Changelog for release-v1.237.0 (#1872)
