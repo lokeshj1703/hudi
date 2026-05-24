@@ -26,11 +26,19 @@ import org.apache.hudi.common.util.collection.ExternalSpillableMap.DiskMapType;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestConfigUtils {
 
@@ -83,5 +91,86 @@ public class TestConfigUtils {
   public void testToMapThrowError() {
     String srcKv = "k.1.1.2=v1=v1.1\nk.2.1.2=v2\nk.3.1.2=v3";
     assertThrows(IllegalArgumentException.class, () -> ConfigUtils.toMap(srcKv));
+  }
+
+  @Test
+  public void testExtractWithPrefixMatchesAndStrips() {
+    Properties src = new Properties();
+    src.setProperty("hoodie.metadata.writer.hoodie.filesystem.view.type", "SPILLABLE_DISK");
+    src.setProperty("hoodie.metadata.writer.hoodie.embed.timeline.server", "false");
+    src.setProperty("hoodie.base.path", "/tmp");
+    List<String> dropped = new ArrayList<>();
+    List<String> skippedEmpty = new ArrayList<>();
+
+    Properties out = ConfigUtils.extractWithPrefix(src, "hoodie.metadata.writer.", Collections.emptySet(), dropped, skippedEmpty);
+
+    assertEquals(2, out.size());
+    assertEquals("SPILLABLE_DISK", out.getProperty("hoodie.filesystem.view.type"));
+    assertEquals("false", out.getProperty("hoodie.embed.timeline.server"));
+    assertTrue(dropped.isEmpty());
+    assertTrue(skippedEmpty.isEmpty());
+  }
+
+  @Test
+  public void testExtractWithPrefixNoMatch() {
+    Properties src = new Properties();
+    src.setProperty("hoodie.base.path", "/tmp");
+    src.setProperty("hoodie.filesystem.view.type", "MEMORY");
+    List<String> dropped = new ArrayList<>();
+    List<String> skippedEmpty = new ArrayList<>();
+
+    Properties out = ConfigUtils.extractWithPrefix(src, "hoodie.metadata.writer.", Collections.emptySet(), dropped, skippedEmpty);
+
+    assertTrue(out.isEmpty());
+    assertTrue(dropped.isEmpty());
+  }
+
+  @Test
+  public void testExtractWithPrefixDropsBlockedKeys() {
+    Properties src = new Properties();
+    src.setProperty("hoodie.metadata.writer.hoodie.table.name", "evil_name");
+    src.setProperty("hoodie.metadata.writer.hoodie.filesystem.view.type", "SPILLABLE_DISK");
+    Set<String> blocklist = new HashSet<>();
+    blocklist.add("hoodie.table.name");
+    List<String> dropped = new ArrayList<>();
+    List<String> skippedEmpty = new ArrayList<>();
+
+    Properties out = ConfigUtils.extractWithPrefix(src, "hoodie.metadata.writer.", blocklist, dropped, skippedEmpty);
+
+    assertEquals(1, out.size());
+    assertEquals("SPILLABLE_DISK", out.getProperty("hoodie.filesystem.view.type"));
+    assertFalse(out.containsKey("hoodie.table.name"));
+    assertEquals(1, dropped.size());
+    assertEquals("hoodie.table.name", dropped.get(0));
+  }
+
+  @Test
+  public void testExtractWithPrefixSkipsEmptyValues() {
+    Properties src = new Properties();
+    src.setProperty("hoodie.metadata.writer.hoodie.knob.a", "");
+    src.setProperty("hoodie.metadata.writer.hoodie.knob.b", "value");
+    List<String> dropped = new ArrayList<>();
+    List<String> skippedEmpty = new ArrayList<>();
+
+    Properties out = ConfigUtils.extractWithPrefix(src, "hoodie.metadata.writer.", Collections.emptySet(), dropped, skippedEmpty);
+
+    assertEquals(1, out.size());
+    assertEquals("value", out.getProperty("hoodie.knob.b"));
+    assertEquals(1, skippedEmpty.size());
+    assertEquals("hoodie.knob.a", skippedEmpty.get(0));
+  }
+
+  @Test
+  public void testExtractWithPrefixEmptyOrNullInputs() {
+    List<String> dropped = new ArrayList<>();
+    List<String> skippedEmpty = new ArrayList<>();
+
+    assertTrue(ConfigUtils.extractWithPrefix(new Properties(), "hoodie.metadata.writer.", Collections.emptySet(), dropped, skippedEmpty).isEmpty());
+    assertTrue(ConfigUtils.extractWithPrefix(null, "hoodie.metadata.writer.", Collections.emptySet(), dropped, skippedEmpty).isEmpty());
+
+    Properties src = new Properties();
+    src.setProperty("hoodie.metadata.writer.x", "v");
+    assertTrue(ConfigUtils.extractWithPrefix(src, "", Collections.emptySet(), dropped, skippedEmpty).isEmpty());
+    assertTrue(ConfigUtils.extractWithPrefix(src, null, Collections.emptySet(), dropped, skippedEmpty).isEmpty());
   }
 }

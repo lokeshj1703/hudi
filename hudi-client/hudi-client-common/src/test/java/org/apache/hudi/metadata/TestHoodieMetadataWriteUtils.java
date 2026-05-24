@@ -18,9 +18,13 @@
 
 package org.apache.hudi.metadata;
 
+import org.apache.hudi.common.config.HoodieCommonConfig;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.model.HoodieCleaningPolicy;
 import org.apache.hudi.common.model.HoodieFailedWritesCleaningPolicy;
+import org.apache.hudi.common.table.view.FileSystemViewStorageConfig;
+import org.apache.hudi.common.table.view.FileSystemViewStorageType;
+import org.apache.hudi.common.util.collection.ExternalSpillableMap;
 import org.apache.hudi.config.HoodieCleanConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
 
@@ -31,6 +35,7 @@ import java.util.Properties;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestHoodieMetadataWriteUtils {
@@ -169,5 +174,114 @@ public class TestHoodieMetadataWriteUtils {
         writeConfigDisabled, HoodieFailedWritesCleaningPolicy.EAGER);
     assertFalse(metadataWriteConfigDisabled.isEmbeddedTimelineServerEnabled(),
         "Embedded timeline server should be disabled for metadata table when explicitly configured to false");
+  }
+
+  @Test
+  public void testPassthroughAppliesToMdtWriterConfig() {
+    Properties properties = new Properties();
+    // Motivating case: override FSV storage type on MDT only.
+    properties.setProperty(HoodieMetadataConfig.METADATA_WRITER_CONFIG_PREFIX
+        + FileSystemViewStorageConfig.VIEW_TYPE.key(), FileSystemViewStorageType.SPILLABLE_DISK.name());
+    HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder()
+        .withPath("/tmp")
+        .withProperties(properties)
+        .build();
+
+    HoodieWriteConfig metadataWriteConfig = HoodieMetadataWriteUtils.createMetadataWriteConfig(
+        writeConfig, HoodieFailedWritesCleaningPolicy.EAGER);
+
+    assertEquals(FileSystemViewStorageType.SPILLABLE_DISK.name(),
+        metadataWriteConfig.getProps().getProperty(FileSystemViewStorageConfig.VIEW_TYPE.key()));
+    assertEquals(FileSystemViewStorageType.SPILLABLE_DISK,
+        metadataWriteConfig.getViewStorageConfig().getStorageType());
+  }
+
+  @Test
+  public void testNonPrefixedKeysAreNotForwarded() {
+    Properties properties = new Properties();
+    // No prefix: this should not bleed into the MDT writer config.
+    properties.setProperty(FileSystemViewStorageConfig.VIEW_TYPE.key(),
+        FileSystemViewStorageType.SPILLABLE_DISK.name());
+    HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder()
+        .withPath("/tmp")
+        .withProperties(properties)
+        .build();
+
+    HoodieWriteConfig metadataWriteConfig = HoodieMetadataWriteUtils.createMetadataWriteConfig(
+        writeConfig, HoodieFailedWritesCleaningPolicy.EAGER);
+
+    // The data writer applied SPILLABLE_DISK to itself.
+    assertEquals(FileSystemViewStorageType.SPILLABLE_DISK, writeConfig.getViewStorageConfig().getStorageType());
+    // MDT should retain its default (MEMORY) because no passthrough was set.
+    assertEquals(FileSystemViewStorageType.MEMORY, metadataWriteConfig.getViewStorageConfig().getStorageType());
+  }
+
+  @Test
+  public void testBlocklistedPassthroughKeysAreDropped() {
+    Properties properties = new Properties();
+    // All on blocklist — none of these should leak into MDT writer config.
+    properties.setProperty(HoodieMetadataConfig.METADATA_WRITER_CONFIG_PREFIX
+        + HoodieWriteConfig.TBL_NAME.key(), "evil_name");
+    properties.setProperty(HoodieMetadataConfig.METADATA_WRITER_CONFIG_PREFIX
+        + HoodieWriteConfig.AUTO_COMMIT_ENABLE.key(), "false");
+    properties.setProperty(HoodieMetadataConfig.METADATA_WRITER_CONFIG_PREFIX
+        + HoodieMetadataConfig.ENABLE.key(), "true");
+    HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder()
+        .withPath("/tmp")
+        .forTable("real_table")
+        .withProperties(properties)
+        .build();
+
+    HoodieWriteConfig metadataWriteConfig = HoodieMetadataWriteUtils.createMetadataWriteConfig(
+        writeConfig, HoodieFailedWritesCleaningPolicy.EAGER);
+
+    // Table name keeps the curated MDT suffix, evil_name does not apply.
+    assertTrue(metadataWriteConfig.getTableName().endsWith("_metadata"));
+    assertFalse(metadataWriteConfig.getTableName().contains("evil_name"));
+    // Auto-commit is forced true by curated code, not overridden to false.
+    assertTrue(metadataWriteConfig.shouldAutoCommit());
+    // Metadata table cannot enable its own metadata table (would recurse).
+    assertFalse(metadataWriteConfig.isMetadataTableEnabled());
+  }
+
+  @Test
+  public void testPassthroughDiskMapConfigsApplyToMdt() {
+    // Motivating case for this feature: tune spillable diskmap behavior on MDT writer only.
+    // Defaults are SPILLABLE_DISK_MAP_TYPE=BITCASK and DISK_MAP_BITCASK_COMPRESSION_ENABLED=true.
+    Properties properties = new Properties();
+    properties.setProperty(HoodieMetadataConfig.METADATA_WRITER_CONFIG_PREFIX
+        + HoodieCommonConfig.SPILLABLE_DISK_MAP_TYPE.key(), ExternalSpillableMap.DiskMapType.ROCKS_DB.name());
+    properties.setProperty(HoodieMetadataConfig.METADATA_WRITER_CONFIG_PREFIX
+        + HoodieCommonConfig.DISK_MAP_BITCASK_COMPRESSION_ENABLED.key(), "false");
+    HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder()
+        .withPath("/tmp")
+        .withProperties(properties)
+        .build();
+
+    HoodieWriteConfig metadataWriteConfig = HoodieMetadataWriteUtils.createMetadataWriteConfig(
+        writeConfig, HoodieFailedWritesCleaningPolicy.EAGER);
+
+    // The data writer keeps its defaults — passthrough is MDT-only.
+    assertEquals(ExternalSpillableMap.DiskMapType.BITCASK, writeConfig.getCommonConfig().getSpillableDiskMapType());
+    assertTrue(writeConfig.getCommonConfig().isBitCaskDiskMapCompressionEnabled());
+    // The MDT writer config sees the passthrough overrides.
+    assertEquals(ExternalSpillableMap.DiskMapType.ROCKS_DB, metadataWriteConfig.getCommonConfig().getSpillableDiskMapType());
+    assertFalse(metadataWriteConfig.getCommonConfig().isBitCaskDiskMapCompressionEnabled());
+  }
+
+  @Test
+  public void testEmptyPassthroughValueIsSkipped() {
+    Properties properties = new Properties();
+    properties.setProperty(HoodieMetadataConfig.METADATA_WRITER_CONFIG_PREFIX
+        + "hoodie.some.knob", "");
+    HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder()
+        .withPath("/tmp")
+        .withProperties(properties)
+        .build();
+
+    HoodieWriteConfig metadataWriteConfig = HoodieMetadataWriteUtils.createMetadataWriteConfig(
+        writeConfig, HoodieFailedWritesCleaningPolicy.EAGER);
+
+    assertNull(metadataWriteConfig.getProps().getProperty("hoodie.some.knob"));
   }
 }

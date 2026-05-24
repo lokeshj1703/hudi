@@ -30,10 +30,12 @@ import org.apache.hudi.common.table.HoodieTableConfig;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.marker.MarkerType;
 import org.apache.hudi.common.table.timeline.versioning.TimelineLayoutVersion;
+import org.apache.hudi.common.util.ConfigUtils;
 import org.apache.hudi.common.util.ValidationUtils;
 import org.apache.hudi.config.HoodieArchivalConfig;
 import org.apache.hudi.config.HoodieCleanConfig;
 import org.apache.hudi.config.HoodieCompactionConfig;
+import org.apache.hudi.config.HoodieLockConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.config.metrics.HoodieMetricsConfig;
 import org.apache.hudi.config.metrics.HoodieMetricsGraphiteConfig;
@@ -43,7 +45,16 @@ import org.apache.hudi.config.metrics.HoodieMetricsDatadogConfig;
 import org.apache.hudi.exception.HoodieMetadataException;
 import org.apache.hudi.table.action.compact.strategy.UnBoundedCompactionStrategy;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 
 import static org.apache.hudi.common.config.HoodieMetadataConfig.DEFAULT_METADATA_ASYNC_CLEAN;
 import static org.apache.hudi.common.config.HoodieMetadataConfig.DEFAULT_METADATA_CLEANER_COMMITS_RETAINED;
@@ -54,6 +65,8 @@ import static org.apache.hudi.metadata.HoodieTableMetadata.METADATA_TABLE_NAME_S
  * Metadata table write utils.
  */
 public class HoodieMetadataWriteUtils {
+  private static final Logger LOG = LoggerFactory.getLogger(HoodieMetadataWriteUtils.class);
+
   // Virtual keys support for metadata table. This Field is
   // from the metadata payload schema.
   public static final String RECORD_KEY_FIELD_NAME = HoodieMetadataPayload.KEY_FIELD_NAME;
@@ -62,6 +75,51 @@ public class HoodieMetadataWriteUtils {
   // ever. Hence, we use a very large basefile size in metadata table. The actual size of the HFiles created will
   // eventually depend on the number of file groups selected for each partition (See estimateFileGroupCount function)
   private static final long MDT_MAX_HFILE_SIZE_BYTES = 10 * 1024 * 1024 * 1024L; // 10GB
+
+  /**
+   * Stripped keys that must not be forwarded from {@code hoodie.metadata.writer.<X>} passthrough
+   * because overriding them would corrupt MDT identity or break invariants that the rest of
+   * {@link #createMetadataWriteConfig} enforces (table name, base path, recordkey, concurrency
+   * mode, auto-commit, schema, manual cleaner/compaction/archival triggers, etc.).
+   * Keys are referenced via {@code ConfigProperty.key()} to avoid string drift.
+   */
+  public static final Set<String> METADATA_WRITER_PASSTHROUGH_BLOCKLIST;
+
+  static {
+    Set<String> blocked = new HashSet<>(Arrays.asList(
+        // Identity
+        HoodieWriteConfig.TBL_NAME.key(),
+        HoodieWriteConfig.BASE_PATH.key(),
+        HoodieTableConfig.RECORDKEY_FIELDS.key(),
+        "hoodie.datasource.write.recordkey.field",
+        HoodieTableConfig.TYPE.key(),
+        HoodieWriteConfig.KEYGENERATOR_CLASS_NAME.key(),
+        "hoodie.datasource.write.keygenerator.class",
+        "hoodie.datasource.write.partitionpath.field",
+        "hoodie.datasource.write.precombine.field",
+        // Existing checkArgument invariants
+        HoodieMetadataConfig.ENABLE.key(),
+        HoodieWriteConfig.AUTO_COMMIT_ENABLE.key(),
+        HoodieWriteConfig.WRITE_STATUS_CLASS_NAME.key(),
+        HoodieCleanConfig.AUTO_CLEAN.key(),
+        HoodieCompactionConfig.INLINE_COMPACT.key(),
+        // Concurrency
+        HoodieWriteConfig.WRITE_CONCURRENCY_MODE.key(),
+        HoodieLockConfig.LOCK_PROVIDER_CLASS_NAME.key(),
+        // Service-trigger / markers
+        HoodieArchivalConfig.AUTO_ARCHIVE.key(),
+        HoodieCleanConfig.ASYNC_CLEAN.key(),
+        HoodieWriteConfig.ROLLBACK_USING_MARKERS_ENABLE.key(),
+        HoodieWriteConfig.MARKERS_TYPE.key(),
+        // Schema / meta fields
+        HoodieWriteConfig.AVRO_SCHEMA_STRING.key(),
+        HoodieWriteConfig.AVRO_SCHEMA_VALIDATE_ENABLE.key(),
+        HoodieTableConfig.POPULATE_META_FIELDS.key(),
+        // Compaction strategy must remain UnBoundedCompactionStrategy
+        HoodieCompactionConfig.COMPACTION_STRATEGY.key()
+    ));
+    METADATA_WRITER_PASSTHROUGH_BLOCKLIST = Collections.unmodifiableSet(blocked);
+  }
 
   /**
    * Create a {@code HoodieWriteConfig} to use for the Metadata Table.  This is used by async
@@ -97,7 +155,34 @@ public class HoodieMetadataWriteUtils {
     }
 
     // Create the write config for the metadata table by borrowing options from the main write config.
-    HoodieWriteConfig.Builder builder = HoodieWriteConfig.newBuilder()
+    HoodieWriteConfig.Builder builder = HoodieWriteConfig.newBuilder();
+
+    // Apply hoodie.metadata.writer.* passthrough FIRST so that curated .withXxx(...) calls below
+    // (and explicit properties.put(...) blocks) overwrite any conflicting passthrough values.
+    List<String> droppedPassthrough = new ArrayList<>();
+    List<String> skippedEmptyPassthrough = new ArrayList<>();
+    Properties passthrough = ConfigUtils.extractWithPrefix(
+        writeConfig.getProps(),
+        HoodieMetadataConfig.METADATA_WRITER_CONFIG_PREFIX,
+        METADATA_WRITER_PASSTHROUGH_BLOCKLIST,
+        droppedPassthrough,
+        skippedEmptyPassthrough);
+    if (!passthrough.isEmpty()) {
+      builder.withProperties(passthrough);
+      LOG.info("Applied {} hoodie.metadata.writer.* passthrough overrides to MDT '{}' writer config: keys={}",
+          passthrough.size(), tableName, passthrough.stringPropertyNames());
+    }
+    if (!droppedPassthrough.isEmpty()) {
+      LOG.warn("Ignored {} hoodie.metadata.writer.* passthrough overrides for MDT '{}' because the "
+          + "stripped keys are on the MDT identity/invariants blocklist: {}",
+          droppedPassthrough.size(), tableName, droppedPassthrough);
+    }
+    if (!skippedEmptyPassthrough.isEmpty()) {
+      LOG.debug("Skipped {} hoodie.metadata.writer.* passthrough overrides for MDT '{}' due to null/empty values: {}",
+          skippedEmptyPassthrough.size(), tableName, skippedEmptyPassthrough);
+    }
+
+    builder
         .withEngineType(writeConfig.getEngineType())
         .withTimelineLayoutVersion(TimelineLayoutVersion.CURR_VERSION)
         .withMergeAllowDuplicateOnInserts(false)

@@ -56,6 +56,22 @@ public final class HoodieMetadataConfig extends HoodieConfig {
   public static final String METADATA_PREFIX = "hoodie.metadata";
   public static final String OPTIMIZED_LOG_BLOCKS_SCAN = ".optimized.log.blocks.scan.enable";
 
+  /**
+   * Prefix used to route arbitrary writer-side Hudi configs into the metadata table's
+   * {@code HoodieWriteConfig}. Any data-writer property keyed {@code hoodie.metadata.writer.<X>}
+   * is forwarded to the MDT writer as {@code <X>} (prefix stripped). Curated MDT configs and
+   * MDT identity/invariant keys (see the blocklist in {@code HoodieMetadataWriteUtils}) take
+   * precedence over passthrough values.
+   *
+   * <p>Effective scope: passthrough is applied at the start of MDT write-config construction so
+   * that downstream sub-configs which seed themselves via
+   * {@code HoodieXxxConfig.newBuilder().fromProperties(writeConfig.getProps()).build()} pick up
+   * the passthrough values. Sub-configs that {@code HoodieMetadataWriteUtils} builds explicitly
+   * and applies via {@code withXxxConfig(...)} (clean, compaction, archival, storage,
+   * consistency-guard) overwrite passthrough for keys they own, by design.
+   */
+  public static final String METADATA_WRITER_CONFIG_PREFIX = "hoodie.metadata.writer.";
+
   // Enable the internal Metadata Table which saves file listings
   public static final ConfigProperty<Boolean> ENABLE = ConfigProperty
       .key(METADATA_PREFIX + ".enable")

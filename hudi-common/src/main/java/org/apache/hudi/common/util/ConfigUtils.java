@@ -198,6 +198,50 @@ public class ConfigUtils {
   }
 
   /**
+   * Extracts all entries from {@code src} whose key starts with {@code prefix}, strips the prefix,
+   * and returns them as a fresh {@link Properties}. Entries whose stripped key is in {@code blocklist}
+   * are excluded and their stripped form appended to {@code droppedOut}. Entries with a {@code null}
+   * or empty value are skipped and appended to {@code skippedEmptyOut}.
+   *
+   * @param src             Source properties to scan.
+   * @param prefix          Prefix to match and strip (e.g. {@code "hoodie.metadata.writer."}).
+   * @param blocklist       Stripped keys that must not be forwarded.
+   * @param droppedOut      Out-list for stripped keys that were dropped due to the blocklist.
+   * @param skippedEmptyOut Out-list for stripped keys whose value was null/empty and thus skipped.
+   * @return Newly-allocated {@link Properties} containing the stripped, non-blocked, non-empty entries.
+   */
+  public static Properties extractWithPrefix(Properties src,
+                                             String prefix,
+                                             Set<String> blocklist,
+                                             List<String> droppedOut,
+                                             List<String> skippedEmptyOut) {
+    Properties out = new Properties();
+    if (src == null || prefix == null || prefix.isEmpty()) {
+      return out;
+    }
+    for (String key : src.stringPropertyNames()) {
+      if (!key.startsWith(prefix)) {
+        continue;
+      }
+      String stripped = key.substring(prefix.length());
+      if (stripped.isEmpty()) {
+        continue;
+      }
+      if (blocklist != null && blocklist.contains(stripped)) {
+        droppedOut.add(stripped);
+        continue;
+      }
+      String value = src.getProperty(key);
+      if (value == null || value.isEmpty()) {
+        skippedEmptyOut.add(stripped);
+        continue;
+      }
+      out.setProperty(stripped, value);
+    }
+    return out;
+  }
+
+  /**
    * Whether the properties contain a config. If any of the key or alternative keys of the
    * {@link ConfigProperty} exists in the properties, this method returns {@code true}.
    *
