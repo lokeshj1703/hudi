@@ -25,6 +25,7 @@ import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.common.model.HoodiePartitionMetadata;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.TableSchemaResolver;
 import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.config.HoodieCleanConfig;
@@ -32,6 +33,7 @@ import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.table.HoodieTable;
 
+import org.apache.avro.Schema;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
@@ -49,10 +51,13 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -211,6 +216,38 @@ public class TestHoodieBackedTableMetadataWriter {
     verify(writeClient, times(hasPendingLogCompaction ? 1 : 0)).runAnyPendingLogCompactions();
     int expectedTimelineReloads = (requiresRefresh ? 1 : 0) + (ranService ? 1 : 0);
     verify(metaClient, times(expectedTimelineReloads)).reloadActiveTimeline();
+  }
+
+  // ---- ensureSchemaForRLIBootstrap tests ----
+
+  private static final String SIMPLE_SCHEMA_JSON =
+      "{\"type\":\"record\",\"name\":\"Test\",\"namespace\":\"test\","
+          + "\"fields\":[{\"name\":\"id\",\"type\":\"string\"}]}";
+
+  @Test
+  void ensureSchemaForRLIBootstrap_noopWhenSchemaPresent() {
+    HoodieTableMetaClient metaClient = mock(HoodieTableMetaClient.class);
+    HoodieWriteConfig writeConfig = mock(HoodieWriteConfig.class);
+    when(writeConfig.getSchema()).thenReturn(SIMPLE_SCHEMA_JSON);
+    assertDoesNotThrow(() -> HoodieBackedTableMetadataWriter.ensureSchemaForRLIBootstrap(metaClient, writeConfig));
+  }
+
+  @Test
+  void ensureSchemaForRLIBootstrap_fallsBackToTableSchemaResolverWhenNull() throws Exception {
+    HoodieTableMetaClient metaClient = mock(HoodieTableMetaClient.class);
+    HoodieWriteConfig writeConfig = mock(HoodieWriteConfig.class);
+    when(writeConfig.getSchema()).thenReturn(null);
+
+    Schema tableSchema = new Schema.Parser().parse(SIMPLE_SCHEMA_JSON);
+    try (org.mockito.MockedConstruction<TableSchemaResolver> mockedResolver =
+        mockConstruction(TableSchemaResolver.class,
+            (resolver, ctx) -> when(resolver.getTableAvroSchema(false)).thenReturn(tableSchema))) {
+
+      HoodieBackedTableMetadataWriter.ensureSchemaForRLIBootstrap(metaClient, writeConfig);
+
+      assertEquals(1, mockedResolver.constructed().size());
+      verify(writeConfig).setValue(HoodieWriteConfig.AVRO_SCHEMA_STRING, tableSchema.toString());
+    }
   }
 
   @ParameterizedTest

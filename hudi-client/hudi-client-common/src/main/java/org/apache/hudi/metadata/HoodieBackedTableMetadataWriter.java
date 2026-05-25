@@ -47,6 +47,7 @@ import org.apache.hudi.common.model.HoodieReplaceCommitMetadata;
 import org.apache.hudi.common.model.HoodieTableType;
 import org.apache.hudi.common.model.WriteOperationType;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.TableSchemaResolver;
 import org.apache.hudi.common.table.log.HoodieLogFormat;
 import org.apache.hudi.common.table.log.block.HoodieDeleteBlock;
 import org.apache.hudi.common.table.log.block.HoodieLogBlock.HeaderMetadataType;
@@ -785,6 +786,24 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
   }
 
   /**
+   * Ensures the write config carries a schema for use during record index bootstrap.
+   * When the write config does not carry a schema (e.g. table-service operations such as clean),
+   * falls back to resolving the schema from the table's commit history / data files.
+   */
+  static void ensureSchemaForRLIBootstrap(HoodieTableMetaClient metaClient, HoodieWriteConfig dataWriteConfig) {
+    if (dataWriteConfig.getSchema() != null) {
+      return;
+    }
+    try {
+      String schemaStr = new TableSchemaResolver(metaClient).getTableAvroSchema(false).toString();
+      dataWriteConfig.setValue(HoodieWriteConfig.AVRO_SCHEMA_STRING, schemaStr);
+    } catch (Exception e) {
+      throw new HoodieException(
+          String.format("Could not resolve schema for table %s for record index bootstrap", metaClient.getBasePath()), e);
+    }
+  }
+
+  /**
    * Fetch record locations from FileSlice snapshot.
    * @param engineContext context ot use.
    * @param partitionFileSlicePairs list of pairs of partition and file slice.
@@ -810,6 +829,9 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
         .filterCompletedInstants()
         .lastInstant()
         .map(HoodieInstant::getTimestamp);
+
+    // Ensure schema is populated before parallelizing — may be absent during table-service operations (e.g. clean)
+    ensureSchemaForRLIBootstrap(metaClient, dataWriteConfig);
 
     engineContext.setJobStatus(activeModule, "Record Index: reading record keys from " + partitionFileSlicePairs.size() + " file slices");
     final int parallelism = Math.min(partitionFileSlicePairs.size(), recordIndexMaxParallelism);
