@@ -1274,3 +1274,6 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-05-24 16:21:55] [release-v1.239.0] ---
 [ENG-42074][CHERRYPICK] Route hoodie.metadata.writer.* props to MDT writer config (#1886)
 [AUDIT-1071]: Changelog for release-v1.238.0 (#1879)
+
+--- [2026-05-25 04:01:07] [release-v1.240.0] ---
+[AUDIT-1071]: Changelog for release-v1.239.0 (#1887)
