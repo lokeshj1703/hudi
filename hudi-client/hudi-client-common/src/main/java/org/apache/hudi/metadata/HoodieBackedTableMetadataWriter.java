@@ -53,6 +53,7 @@ import org.apache.hudi.common.model.HoodieTableType;
 import org.apache.hudi.common.model.HoodieWriteStat;
 import org.apache.hudi.common.model.WriteOperationType;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.TableSchemaResolver;
 import org.apache.hudi.common.table.log.HoodieLogFormat;
 import org.apache.hudi.common.table.log.block.HoodieDeleteBlock;
 import org.apache.hudi.common.table.log.block.HoodieLogBlock.HeaderMetadataType;
@@ -946,6 +947,24 @@ public abstract class HoodieBackedTableMetadataWriter<I, O> implements HoodieTab
   }
 
   /**
+   * Resolves the write schema with metadata fields for use during record index bootstrap.
+   * When the write config does not carry a schema (e.g. table-service operations such as clean),
+   * falls back to resolving the schema from the table's commit history / data files.
+   */
+  static Schema resolveAvroSchemaForRLIBootstrap(HoodieTableMetaClient metaClient, HoodieWriteConfig dataWriteConfig) {
+    String writeSchemaStr = dataWriteConfig.getWriteSchema();
+    if (writeSchemaStr == null) {
+      try {
+        writeSchemaStr = new TableSchemaResolver(metaClient).getTableAvroSchema(false).toString();
+      } catch (Exception e) {
+        throw new HoodieException(
+            String.format("Could not resolve schema for table %s for record index bootstrap", metaClient.getBasePath()), e);
+      }
+    }
+    return AvroSchemaCache.intern(HoodieAvroUtils.addMetadataFields(new Schema.Parser().parse(writeSchemaStr), dataWriteConfig.allowOperationMetadataField()));
+  }
+
+  /**
    * Fetch record locations from FileSlice snapshot.
    *
    * @param engineContext             context ot use.
@@ -973,7 +992,7 @@ public abstract class HoodieBackedTableMetadataWriter<I, O> implements HoodieTab
     if (!instantTime.isPresent()) {
       return engineContext.emptyHoodieData();
     }
-    Schema dataSchema = AvroSchemaCache.intern(HoodieAvroUtils.addMetadataFields(new Schema.Parser().parse(dataWriteConfig.getWriteSchema()), dataWriteConfig.allowOperationMetadataField()));
+    Schema dataSchema = resolveAvroSchemaForRLIBootstrap(metaClient, dataWriteConfig);
     Schema requestedSchema = metaClient.getTableConfig().populateMetaFields() ? getRecordKeySchema()
         : HoodieAvroUtils.projectSchema(dataSchema, Arrays.asList(metaClient.getTableConfig().getRecordKeyFields().orElse(new String[0])));
     Option<InternalSchema> internalSchemaOption = SerDeHelper.fromJson(dataWriteConfig.getInternalSchema());
