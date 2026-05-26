@@ -18,6 +18,8 @@
 
 package org.apache.hudi.exception;
 
+import org.apache.hudi.common.util.StringUtils;
+
 import javax.annotation.Nonnull;
 
 /**
@@ -40,4 +42,22 @@ public final class ExceptionUtil {
     return cause;
   }
 
+  /**
+   * Returns true if error message is contained in any nested exception of provided {@link Throwable}.
+   */
+  public static boolean validateErrorMsg(@Nonnull Throwable t, String errorMsg) {
+    if (StringUtils.isNullOrEmpty(errorMsg)) {
+      return false;
+    }
+
+    Throwable cause = t;
+    while (cause != null) {
+      if (cause.getMessage() != null && cause.getMessage().contains(errorMsg)) {
+        return true;
+      }
+      cause = cause.getCause();
+    }
+
+    return false;
+  }
 }
