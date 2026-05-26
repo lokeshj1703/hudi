@@ -56,6 +56,7 @@ import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.ParquetUtils;
 import org.apache.hudi.common.util.VisibleForTesting;
 import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.exception.ExceptionUtil;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.exception.HoodieValidationException;
@@ -604,6 +605,8 @@ public class HoodieMetadataTableValidator implements Serializable {
     } catch (SparkException sparkException) {
       if (sparkException.getCause() instanceof HoodieValidationException) {
         throw (HoodieValidationException) sparkException.getCause();
+      } else if (ExceptionUtil.validateErrorMsg(sparkException, "cancelled because SparkContext was shut down")) {
+        throw new HoodieException(sparkException);
       } else {
         throw new HoodieValidationException("Unexpected spark failure", sparkException);
       }
