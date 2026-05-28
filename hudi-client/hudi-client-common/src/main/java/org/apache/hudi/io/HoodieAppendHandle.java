@@ -19,6 +19,7 @@
 package org.apache.hudi.io;
 
 import org.apache.hudi.client.WriteStatus;
+import org.apache.hudi.common.config.HoodieMemoryConfig;
 import org.apache.hudi.common.config.TypedProperties;
 import org.apache.hudi.common.engine.TaskContextSupplier;
 import org.apache.hudi.common.fs.FSUtils;
@@ -50,6 +51,7 @@ import org.apache.hudi.common.util.DefaultSizeEstimator;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.ReflectionUtils;
 import org.apache.hudi.common.util.SizeEstimator;
+import org.apache.hudi.common.util.VisibleForTesting;
 import org.apache.hudi.common.util.collection.Triple;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieAppendException;
@@ -120,8 +122,15 @@ public class HoodieAppendHandle<T, I, K, O> extends HoodieWriteHandle<T, I, K, O
   protected long estimatedNumberOfBytesWritten;
   // Number of records that must be written to meet the max block size for a log block
   private long numberOfRecords = 0;
-  // Max block size to limit to for a log block
-  private final long maxBlockSize = config.getLogFileDataBlockMaxSize();
+  // Configured block-size ceiling (hoodie.logfile.data.block.max.size). Surface for canWrite /
+  // log-file-group rolling code paths and operator-visible logging.
+  private final long maxBlockSize;
+  // Effective per-block heap budget used by the flush gate: min(maxBlockSize, dynamic per-task
+  // ceiling). On Spark the dynamic ceiling = (executorMemory * (1 - spark.memory.fraction) /
+  // cores) * hoodie.memory.logfile.append.fraction, floored at
+  // HoodieMemoryConfig.MIN_MEMORY_FOR_LOG_APPEND_BUFFER_IN_BYTES (16MB). On Flink the dynamic
+  // ceiling is absent and this equals maxBlockSize.
+  private final long effectiveBlockSize;
   // Header metadata for a log block
   protected final Map<HeaderMetadataType, String> header = new HashMap<>();
   private SizeEstimator<HoodieRecord> sizeEstimator;
@@ -158,6 +167,21 @@ public class HoodieAppendHandle<T, I, K, O> extends HoodieWriteHandle<T, I, K, O
     this.statuses = new ArrayList<>();
     this.recordProperties.putAll(config.getProps());
     this.maintainBackwardsCompatibleWritesWith0140 = config.doMaintainBackwardsCompatibleWritesWith0140();
+    this.maxBlockSize = config.getLogFileDataBlockMaxSize();
+    String appendFraction = config.getStringOrDefault(HoodieMemoryConfig.MAX_MEMORY_FRACTION_FOR_LOG_APPEND);
+    Option<Long> dynamicCeiling = IOUtils.getMaxMemoryAllowedForLogAppend(
+        taskContextSupplier,
+        appendFraction,
+        HoodieMemoryConfig.MIN_MEMORY_FOR_LOG_APPEND_BUFFER_IN_BYTES);
+    this.effectiveBlockSize = dynamicCeiling.isPresent()
+        ? Math.min(this.maxBlockSize, dynamicCeiling.get())
+        : this.maxBlockSize;
+    if (dynamicCeiling.isPresent() && dynamicCeiling.get() < this.maxBlockSize) {
+      LOG.info(String.format(
+          "HoodieAppendHandle for fileId=%s capping block buffer at %d bytes "
+              + "(dynamic per-task ceiling) below configured maxBlockSize=%d bytes",
+          fileId, this.effectiveBlockSize, this.maxBlockSize));
+    }
   }
 
   public HoodieAppendHandle(HoodieWriteConfig config, String instantTime, HoodieTable<T, I, K, O> hoodieTable,
@@ -193,7 +217,6 @@ public class HoodieAppendHandle<T, I, K, O> extends HoodieWriteHandle<T, I, K, O
       writeStatus.setStat(new HoodieDeltaWriteStat());
       writeStatus.setFileId(fileId);
       writeStatus.setPartitionPath(partitionPath);
-      averageRecordSize = sizeEstimator.sizeEstimate(record);
 
       HoodieDeltaWriteStat deltaWriteStat = (HoodieDeltaWriteStat) writeStatus.getStat();
       deltaWriteStat.setPrevCommit(baseInstantTime);
@@ -456,8 +479,8 @@ public class HoodieAppendHandle<T, I, K, O> extends HoodieWriteHandle<T, I, K, O
     while (recordItr.hasNext()) {
       HoodieRecord record = recordItr.next();
       init(record);
-      flushToDiskIfRequired(record, false);
-      writeToBuffer(record);
+      HoodieRecord bufferedRecord = writeToBuffer(record);
+      flushToDiskIfRequired(bufferedRecord, false);
     }
     appendDataAndDeleteBlocks(header, true);
     estimatedNumberOfBytesWritten += averageRecordSize * numberOfRecords;
@@ -510,8 +533,8 @@ public class HoodieAppendHandle<T, I, K, O> extends HoodieWriteHandle<T, I, K, O
     Option<Map<String, String>> recordMetadata = record.getMetadata();
     try {
       init(record);
-      flushToDiskIfRequired(record, false);
-      writeToBuffer(record);
+      HoodieRecord bufferedRecord = writeToBuffer(record);
+      flushToDiskIfRequired(bufferedRecord, false);
     } catch (Throwable t) {
       // Not throwing exception from here, since we don't want to fail the entire job
       // for a single record
@@ -554,8 +577,8 @@ public class HoodieAppendHandle<T, I, K, O> extends HoodieWriteHandle<T, I, K, O
       for (Map.Entry<String, HoodieRecord<T>> entry: recordMap.entrySet()) {
         HoodieRecord<T> record = entry.getValue();
         init(record);
-        flushToDiskIfRequired(record, false);
-        writeToBuffer(record);
+        HoodieRecord bufferedRecord = writeToBuffer(record);
+        flushToDiskIfRequired(bufferedRecord, false);
       }
       appendDataAndDeleteBlocks(header, true);
       estimatedNumberOfBytesWritten += averageRecordSize * numberOfRecords;
@@ -584,12 +607,22 @@ public class HoodieAppendHandle<T, I, K, O> extends HoodieWriteHandle<T, I, K, O
     return true;
   }
 
-  private void writeToBuffer(HoodieRecord<T> record) {
+  /**
+   * Buffers {@code record} for the next log block. Returns the record actually appended to
+   * {@link #recordList} — the post-{@link #prepareRecord} clone of {@code populatedRecord}
+   * carrying a fully-materialized Avro {@code IndexedRecord} with prepended meta-fields —
+   * or {@code null} when nothing was appended to {@code recordList} (delete, ignored, or
+   * partition-mismatch failure). The returned reference is what {@link #flushToDiskIfRequired}
+   * sizes; sizing the incoming record under-counts heap because the incoming payload is
+   * typically still in its compact/deflated wire form, whereas the buffered record holds
+   * the fully-deserialized Avro graph plus meta-fields.
+   */
+  private HoodieRecord writeToBuffer(HoodieRecord<T> record) {
     if (!partitionPath.equals(record.getPartitionPath())) {
       HoodieUpsertException failureEx = new HoodieUpsertException("mismatched partition path, record partition: "
           + record.getPartitionPath() + " but trying to insert into partition: " + partitionPath);
       writeStatus.markFailure(record, failureEx, record.getMetadata());
-      return;
+      return null;
     }
 
     // update the new location of the record, so we know where to find it next
@@ -601,11 +634,13 @@ public class HoodieAppendHandle<T, I, K, O> extends HoodieWriteHandle<T, I, K, O
     // fetch the ordering val first in case the record was deflated.
     final Comparable<?> orderingVal = record.getOrderingValue(writeSchema, recordProperties);
     Option<HoodieRecord> indexedRecord = prepareRecord(record);
+    HoodieRecord bufferedRecord = null;
     if (indexedRecord.isPresent()) {
       // Skip the ignored record.
       try {
         if (!indexedRecord.get().shouldIgnore(writeSchema, recordProperties)) {
           recordList.add(indexedRecord.get());
+          bufferedRecord = indexedRecord.get();
         }
       } catch (IOException e) {
         writeStatus.markFailure(record, e, record.getMetadata());
@@ -615,27 +650,82 @@ public class HoodieAppendHandle<T, I, K, O> extends HoodieWriteHandle<T, I, K, O
       recordsToDelete.add(DeleteRecord.create(record.getKey(), orderingVal));
     }
     numberOfRecords++;
+    return bufferedRecord;
   }
 
   /**
    * Checks if the number of records have reached the set threshold and then flushes the records to disk.
+   *
+   * <p>{@code bufferedRecord} is the record that was just appended to {@link #recordList} by
+   * {@link #writeToBuffer} (or {@code null} for delete/ignored windows where {@code recordList}
+   * did not grow). Sizing this object — rather than the incoming pre-{@code prepareRecord}
+   * record — keeps {@link #averageRecordSize} aligned with what is actually retained in heap.
+   * The incoming record's payload is typically still compact/deflated; the buffered record
+   * holds the fully-materialized Avro {@code IndexedRecord} with prepended meta-fields, which
+   * is what {@link #effectiveBlockSize} is meant to bound.
    */
-  private void flushToDiskIfRequired(HoodieRecord record, boolean appendDeleteBlocks) {
-    if (numberOfRecords >= (int) (maxBlockSize / averageRecordSize)
-        || numberOfRecords % NUMBER_OF_RECORDS_TO_ESTIMATE_RECORD_SIZE == 0) {
-      averageRecordSize = (long) (averageRecordSize * 0.8 + sizeEstimator.sizeEstimate(record) * 0.2);
+  @VisibleForTesting
+  void flushToDiskIfRequired(HoodieRecord bufferedRecord, boolean appendDeleteBlocks) {
+    if (bufferedRecord != null
+        && (averageRecordSize == 0
+            || numberOfRecords >= (int) (effectiveBlockSize / Math.max(averageRecordSize, 1))
+            || numberOfRecords % NUMBER_OF_RECORDS_TO_ESTIMATE_RECORD_SIZE == 0)) {
+      long sampled = sizeEstimator.sizeEstimate(bufferedRecord);
+      averageRecordSize = averageRecordSize == 0
+          ? sampled
+          : (long) (averageRecordSize * 0.8 + sampled * 0.2);
     }
 
-    // Append if max number of records reached to achieve block size
-    if (numberOfRecords >= (long) (maxBlockSize / averageRecordSize)) {
-      // Recompute averageRecordSize before writing a new block and update existing value with
-      // avg of new and old
+    // Append if max number of records reached to achieve block size.
+    // Skip when averageRecordSize is still 0 (delete-only prefix before any insert/update).
+    if (averageRecordSize > 0 && numberOfRecords >= (long) (effectiveBlockSize / averageRecordSize)) {
       LOG.info("Flush log block to disk, the current avgRecordSize => " + averageRecordSize);
       // Delete blocks will be appended after appending all the data blocks.
       appendDataAndDeleteBlocks(header, appendDeleteBlocks);
       estimatedNumberOfBytesWritten += averageRecordSize * numberOfRecords;
       numberOfRecords = 0;
     }
+  }
+
+  @VisibleForTesting
+  void setSizeEstimator(SizeEstimator<HoodieRecord> sizeEstimator) {
+    this.sizeEstimator = sizeEstimator;
+  }
+
+  /**
+   * Drives a single iteration of {@link #flushToDiskIfRequired} as if a buffered record had just
+   * been appended to {@code recordList}. {@code null} signals a delete/ignored window (the same
+   * path the production call sites take when {@code writeToBuffer} returns null).
+   */
+  @VisibleForTesting
+  void simulateBufferedRecord(HoodieRecord bufferedRecord) {
+    numberOfRecords++;
+    flushToDiskIfRequired(bufferedRecord, false);
+  }
+
+  @VisibleForTesting
+  long getAverageRecordSize() {
+    return averageRecordSize;
+  }
+
+  @VisibleForTesting
+  long getNumberOfRecords() {
+    return numberOfRecords;
+  }
+
+  @VisibleForTesting
+  long getEstimatedNumberOfBytesWritten() {
+    return estimatedNumberOfBytesWritten;
+  }
+
+  @VisibleForTesting
+  long getEffectiveBlockSize() {
+    return effectiveBlockSize;
+  }
+
+  @VisibleForTesting
+  long getMaxBlockSize() {
+    return maxBlockSize;
   }
 
   private HoodieLogBlock.HoodieLogBlockType pickLogDataBlockFormat() {

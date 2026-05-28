@@ -27,7 +27,9 @@ import static org.apache.hudi.common.config.HoodieMemoryConfig.MAX_DFS_STREAM_BU
 import static org.apache.hudi.common.config.HoodieMemoryConfig.MAX_MEMORY_FOR_COMPACTION;
 import static org.apache.hudi.common.config.HoodieMemoryConfig.MAX_MEMORY_FOR_MERGE;
 import static org.apache.hudi.common.config.HoodieMemoryConfig.MAX_MEMORY_FRACTION_FOR_COMPACTION;
+import static org.apache.hudi.common.config.HoodieMemoryConfig.MAX_MEMORY_FRACTION_FOR_LOG_APPEND;
 import static org.apache.hudi.common.config.HoodieMemoryConfig.MAX_MEMORY_FRACTION_FOR_MERGE;
+import static org.apache.hudi.common.config.HoodieMemoryConfig.MIN_MEMORY_FOR_LOG_APPEND_BUFFER_IN_BYTES;
 import static org.apache.hudi.common.config.HoodieMemoryConfig.WRITESTATUS_FAILURE_FRACTION;
 
 class TestHoodieMemoryConfig {
@@ -56,5 +58,33 @@ class TestHoodieMemoryConfig {
     Assertions.assertEquals(MAX_MEMORY_FRACTION_FOR_COMPACTION_TEST, memoryConfig.getDouble(MAX_MEMORY_FRACTION_FOR_COMPACTION));
     Assertions.assertEquals(MAX_DFS_STREAM_BUFFER_SIZE_TEST, memoryConfig.getInt(MAX_DFS_STREAM_BUFFER_SIZE));
     Assertions.assertEquals(WRITESTATUS_FAILURE_FRACTION_TEST, memoryConfig.getDouble(WRITESTATUS_FAILURE_FRACTION));
+  }
+
+  @Test
+  void testLogAppendFractionDefault() {
+    HoodieMemoryConfig memoryConfig = HoodieMemoryConfig.newBuilder()
+        .fromProperties(new Properties())
+        .build();
+
+    Assertions.assertEquals(0.6, memoryConfig.getDouble(MAX_MEMORY_FRACTION_FOR_LOG_APPEND),
+        "default log-append fraction is 0.6 — matches merge/compaction defaults");
+  }
+
+  @Test
+  void testLogAppendFractionOverrideViaProperties() {
+    Properties props = new Properties();
+    props.setProperty(MAX_MEMORY_FRACTION_FOR_LOG_APPEND.key(), "0.42");
+    HoodieMemoryConfig memoryConfig = HoodieMemoryConfig.newBuilder()
+        .fromProperties(props)
+        .build();
+
+    Assertions.assertEquals(0.42, memoryConfig.getDouble(MAX_MEMORY_FRACTION_FOR_LOG_APPEND),
+        "user-supplied fraction overrides the default");
+  }
+
+  @Test
+  void testLogAppendBufferFloorIs16MB() {
+    Assertions.assertEquals(16 * 1024 * 1024L, MIN_MEMORY_FOR_LOG_APPEND_BUFFER_IN_BYTES,
+        "log-append buffer floor pinned at 16MB — see HoodieAppendHandle effectiveBlockSize derivation");
   }
 }
