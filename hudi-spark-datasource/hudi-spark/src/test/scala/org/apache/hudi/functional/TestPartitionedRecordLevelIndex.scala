@@ -24,6 +24,7 @@ import org.apache.hudi.DataSourceWriteOptions.{DELETE_OPERATION_OPT_VAL, PARTITI
 import org.apache.hudi.client.SparkRDDWriteClient
 import org.apache.hudi.client.common.HoodieSparkEngineContext
 import org.apache.hudi.common.config.{HoodieMetadataConfig, TypedProperties}
+import org.apache.hudi.common.table.HoodieTableMetaClient
 import org.apache.hudi.common.fs.FSUtils
 import org.apache.hudi.common.model.{HoodieRecordGlobalLocation, HoodieTableType}
 import org.apache.hudi.common.table.TableSchemaResolver
@@ -56,7 +57,8 @@ class TestPartitionedRecordLevelIndex extends RecordLevelIndexTestBase {
     var newRecordKeys: java.util.List[String] = null
   }
 
-  def testPartitionedRecordLevelIndex(tableType: HoodieTableType, holder: testPartitionedRecordLevelIndexHolder): Unit = {
+  def testPartitionedRecordLevelIndex(tableType: HoodieTableType, holder: testPartitionedRecordLevelIndexHolder,
+                                      deferRliInit: Boolean = false): Unit = {
     val dataGen = new HoodieTestDataGenerator();
     val inserts = dataGen.generateInserts("001", 5)
     val latestBatch = recordsToStrings(inserts).asScala.toSeq
@@ -69,6 +71,7 @@ class TestPartitionedRecordLevelIndex extends RecordLevelIndexTestBase {
       PRECOMBINE_FIELD.key -> "timestamp",
       HoodieMetadataConfig.RECORD_INDEX_ENABLE_PROP.key()-> "false",
       HoodieMetadataConfig.PARTITIONED_RECORD_INDEX_ENABLE_PROP.key() -> "true",
+      HoodieMetadataConfig.DEFER_RLI_INIT_FOR_FRESH_TABLE.key() -> deferRliInit.toString,
       HoodieCompactionConfig.INLINE_COMPACT.key() -> "false",
       HoodieIndexConfig.INDEX_TYPE.key() -> PARTITIONED_RECORD_INDEX.name())
     holder.options = options
@@ -77,11 +80,20 @@ class TestPartitionedRecordLevelIndex extends RecordLevelIndexTestBase {
       .mode(SaveMode.Overwrite)
       .save(basePath)
     assertEquals(10, spark.read.format("hudi").load(basePath).count())
+    if (deferRliInit) {
+      // With defer enabled on a fresh table, the first commit must not have initialized the partitioned RLI.
+      metaClient = HoodieTableMetaClient.reload(metaClient)
+      assertFalse(metaClient.getTableConfig.getMetadataPartitions.contains(
+        org.apache.hudi.metadata.MetadataPartitionType.RECORD_INDEX.getPartitionPath),
+        "Partitioned RLI partition should not be initialized after the first commit when defer is enabled")
+    }
     val props = TypedProperties.fromMap(JavaConverters.mapAsJavaMapConverter(options).asJava)
     val writeConfig = HoodieWriteConfig.newBuilder()
       .withProps(props)
       .withPath(basePath)
       .build()
+    // When defer is enabled, this metadata-writer entry will trigger the deferred RLI bootstrap
+    // because there is now one completed commit on the data table.
     var metadata = metadataWriter(writeConfig).getTableMetadata
     val recordKeys = inserts.asScala.map(i => i.getRecordKey).asJava.stream().collect(Collectors.toList())
     holder.recordKeys = recordKeys
@@ -225,6 +237,107 @@ class TestPartitionedRecordLevelIndex extends RecordLevelIndexTestBase {
     assertEquals("commit", metaClient.getActiveTimeline.lastInstant().get().getAction)
     metadata = metadataWriter(writeConfig).getTableMetadata
     doAllAssertions(holder, metadata)
+  }
+
+  @Test
+  def testPartitionedRecordLevelIndexDefer(): Unit = {
+    val holder = new testPartitionedRecordLevelIndexHolder
+    testPartitionedRecordLevelIndex(HoodieTableType.MERGE_ON_READ, holder, deferRliInit = true)
+    assertEquals("deltacommit", metaClient.getActiveTimeline.lastInstant().get().getAction)
+    val writeConfig = getWriteConfig(holder.options)
+    var metadata = metadataWriter(writeConfig).getTableMetadata
+    // RLI must be present after the deferred bootstrap completed inside the helper.
+    metaClient = HoodieTableMetaClient.reload(metaClient)
+    assertTrue(metaClient.getTableConfig.getMetadataPartitions.contains(
+      org.apache.hudi.metadata.MetadataPartitionType.RECORD_INDEX.getPartitionPath),
+      "Partitioned RLI should be initialized after the deferred bootstrap")
+    doAllAssertions(holder, metadata)
+    val writeClient = new SparkRDDWriteClient(new HoodieSparkEngineContext(jsc), writeConfig)
+    val timeOpt = writeClient.scheduleCompaction(org.apache.hudi.common.util.Option.empty())
+    assertTrue(timeOpt.isPresent)
+    writeClient.compact(timeOpt.get())
+    metaClient.reloadActiveTimeline()
+    assertEquals("commit", metaClient.getActiveTimeline.lastInstant().get().getAction)
+    metadata = metadataWriter(writeConfig).getTableMetadata
+    doAllAssertions(holder, metadata)
+  }
+
+  @Test
+  def testPartitionedRecordLevelIndexDeferWithBulkInsert(): Unit = {
+    val tableType = HoodieTableType.MERGE_ON_READ
+    val dataGen = new HoodieTestDataGenerator()
+    val inserts1 = dataGen.generateInserts("001", 5)
+    val batch1 = recordsToStrings(inserts1).asScala.toSeq
+    val batch1Df = spark.read.json(spark.sparkContext.parallelize(batch1, 1))
+    val insertDf1 = batch1Df.withColumn("data_partition_path", lit("partition1"))
+      .union(batch1Df.withColumn("data_partition_path", lit("partition2")))
+
+    val options = Map(HoodieWriteConfig.TBL_NAME.key -> "hoodie_test",
+      DataSourceWriteOptions.TABLE_TYPE.key -> tableType.name(),
+      RECORDKEY_FIELD.key -> "_row_key",
+      PARTITIONPATH_FIELD.key -> "data_partition_path",
+      PRECOMBINE_FIELD.key -> "timestamp",
+      HoodieMetadataConfig.RECORD_INDEX_ENABLE_PROP.key() -> "false",
+      HoodieMetadataConfig.PARTITIONED_RECORD_INDEX_ENABLE_PROP.key() -> "true",
+      HoodieMetadataConfig.DEFER_RLI_INIT_FOR_FRESH_TABLE.key() -> "true",
+      HoodieCompactionConfig.INLINE_COMPACT.key() -> "false",
+      HoodieIndexConfig.INDEX_TYPE.key() -> PARTITIONED_RECORD_INDEX.name())
+
+    // Commit #1: bulk_insert on a fresh table with defer enabled.
+    insertDf1.write.format("org.apache.hudi")
+      .options(options)
+      .option(DataSourceWriteOptions.OPERATION.key(), DataSourceWriteOptions.BULK_INSERT_OPERATION_OPT_VAL)
+      .mode(SaveMode.Overwrite)
+      .save(basePath)
+    assertEquals(10, spark.read.format("hudi").load(basePath).count())
+
+    // Defer should have kicked in: RLI partition not initialized after the first bulk_insert.
+    metaClient = HoodieTableMetaClient.reload(metaClient)
+    assertFalse(metaClient.getTableConfig.getMetadataPartitions.contains(
+      org.apache.hudi.metadata.MetadataPartitionType.RECORD_INDEX.getPartitionPath),
+      "Partitioned RLI should not be initialized after the first bulk_insert when defer is enabled")
+
+    // Commit #2: bulk_insert into a third partition with a fresh set of record keys.
+    val inserts2 = dataGen.generateInserts("002", 5)
+    val batch2 = recordsToStrings(inserts2).asScala.toSeq
+    val batch2Df = spark.read.json(spark.sparkContext.parallelize(batch2, 1))
+    val insertDf2 = batch2Df.withColumn("data_partition_path", lit("partition3"))
+
+    insertDf2.write.format("org.apache.hudi")
+      .options(options)
+      .option(DataSourceWriteOptions.OPERATION.key(), DataSourceWriteOptions.BULK_INSERT_OPERATION_OPT_VAL)
+      .mode(SaveMode.Append)
+      .save(basePath)
+    assertEquals(15, spark.read.format("hudi").load(basePath).count())
+
+    // Build the metadata writer; this entry triggers the deferred RLI bootstrap since a completed commit now exists.
+    val writeConfig = getWriteConfig(options)
+    val metadata = metadataWriter(writeConfig).getTableMetadata
+
+    metaClient = HoodieTableMetaClient.reload(metaClient)
+    assertTrue(metaClient.getTableConfig.getMetadataPartitions.contains(
+      org.apache.hudi.metadata.MetadataPartitionType.RECORD_INDEX.getPartitionPath),
+      "Partitioned RLI should be initialized once a completed commit exists on the data table")
+
+    // Validate record key -> location mapping per partition.
+    val df = spark.read.format("hudi").load(basePath).collect()
+    val batch1Keys = inserts1.asScala.map(_.getRecordKey).asJava.stream().collect(Collectors.toList())
+    val batch2Keys = inserts2.asScala.map(_.getRecordKey).asJava.stream().collect(Collectors.toList())
+
+    val partition1Locations = metadata.readRecordIndex(batch1Keys, org.apache.hudi.common.util.Option.of("partition1"))
+    assertEquals(5, partition1Locations.size())
+    validateDfwithLocations(df, partition1Locations, "partition1")
+    val partition2Locations = metadata.readRecordIndex(batch1Keys, org.apache.hudi.common.util.Option.of("partition2"))
+    assertEquals(5, partition2Locations.size())
+    validateDfwithLocations(df, partition2Locations, "partition2")
+    val partition3Locations = metadata.readRecordIndex(batch2Keys, org.apache.hudi.common.util.Option.of("partition3"))
+    assertEquals(5, partition3Locations.size())
+    validateDfwithLocations(df, partition3Locations, "partition3")
+
+    // Cross-partition lookups must be empty: batch1 keys do not live in partition3, batch2 keys do not live in partition1/2.
+    assertEquals(0, metadata.readRecordIndex(batch1Keys, org.apache.hudi.common.util.Option.of("partition3")).size())
+    assertEquals(0, metadata.readRecordIndex(batch2Keys, org.apache.hudi.common.util.Option.of("partition1")).size())
+    assertEquals(0, metadata.readRecordIndex(batch2Keys, org.apache.hudi.common.util.Option.of("partition2")).size())
   }
 
   @ParameterizedTest

@@ -435,6 +435,13 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
         })
         .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
+    // For a fresh table, defer RLI initialization
+    if (dataWriteConfig.getMetadataConfig().shouldDeferRliInitForFreshTable() && this.enabledPartitionTypes.contains(MetadataPartitionType.RECORD_INDEX)
+        && dataMetaClient.getActiveTimeline().filterCompletedInstants().countInstants() == 0) {
+      this.enabledPartitionTypes.remove(MetadataPartitionType.RECORD_INDEX);
+      partitionsToInit.remove(MetadataPartitionType.RECORD_INDEX);
+    }
+
     for (MetadataPartitionType partitionType : partitionsToInit) {
       // Find the commit timestamp to use for this partition. Each initialization should use its own unique commit time.
       String commitTimeForPartition = generateUniqueCommitInstantTime(initializationTime);
