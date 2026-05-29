@@ -1277,3 +1277,9 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 
 --- [2026-05-25 04:01:07] [release-v1.240.0] ---
 [AUDIT-1071]: Changelog for release-v1.239.0 (#1887)
+
+--- [2026-05-29 17:09:13] [release-v1.241.0] ---
+[ENG-42166][CHERRYPICK] Defer RLI initialization for fresh tables (#1894)
+[ENG-41654][CHERRYPICK] fix(append): size buffered record + dynamically cap log-block buffer at per-task memory (#1891)
+[ENG-42105] perf(streamer): fold validate() error-table WriteStatus sums into one pass (#1896)
+[AUDIT-5675]: Changelog for release-v1.240.0 (#1888)
