@@ -1283,3 +1283,6 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 [ENG-41654][CHERRYPICK] fix(append): size buffered record + dynamically cap log-block buffer at per-task memory (#1891)
 [ENG-42105] perf(streamer): fold validate() error-table WriteStatus sums into one pass (#1896)
 [AUDIT-5675]: Changelog for release-v1.240.0 (#1888)
+
+--- [2026-06-01 05:03:45] [release-v1.242.0] ---
+[AUDIT-1071]: Changelog for release-v1.241.0 (#1900)
