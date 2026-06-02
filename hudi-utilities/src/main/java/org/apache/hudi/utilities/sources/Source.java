@@ -46,7 +46,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 
-import static org.apache.hudi.common.table.checkpoint.CheckpointUtils.shouldTargetCheckpointV2;
 import static org.apache.hudi.config.HoodieErrorTableConfig.ERROR_TABLE_PERSIST_SOURCE_RDD;
 import static org.apache.hudi.config.HoodieWriteConfig.TAGGED_RECORD_STORAGE_LEVEL_VALUE;
 import static org.apache.hudi.config.HoodieWriteConfig.WRITE_TABLE_VERSION;
@@ -149,25 +148,6 @@ public abstract class Source<T> implements SourceCommitCallback, Serializable {
       }
     }
     throw new UnsupportedOperationException("Unsupported checkpoint type: " + lastCheckpoint.get());
-  }
-
-  public void assertCheckpointVersion(Option<Checkpoint> lastCheckpoint, Option<Checkpoint> lastCheckpointTranslated, Checkpoint checkpoint) {
-    if (checkpoint != null) {
-      boolean shouldBeV2Checkpoint = shouldTargetCheckpointV2(writeTableVersion, getClass().getName());
-      String errorMessage = String.format(
-          "Data source should return checkpoint version V%s. The checkpoint resumed in the iteration is %s, whose translated version is %s. "
-              + "The checkpoint returned after the iteration %s.",
-          shouldBeV2Checkpoint ? "2" : "1",
-          lastCheckpoint.isEmpty() ? "null" : lastCheckpointTranslated.get(),
-          lastCheckpointTranslated.isEmpty() ? "null" : lastCheckpointTranslated.get(),
-          checkpoint);
-      if (shouldBeV2Checkpoint && !(checkpoint instanceof StreamerCheckpointV2)) {
-        throw new IllegalStateException(errorMessage);
-      }
-      if (!shouldBeV2Checkpoint && !(checkpoint instanceof StreamerCheckpointV1)) {
-        throw new IllegalStateException(errorMessage);
-      }
-    }
   }
 
   /**

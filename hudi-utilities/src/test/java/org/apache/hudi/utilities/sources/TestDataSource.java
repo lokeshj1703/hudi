@@ -34,6 +34,8 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static org.apache.hudi.common.table.checkpoint.CheckpointUtils.createCheckpoint;
+
 /**
  * An implementation of {@link Source}, that emits test upserts.
  */
@@ -70,6 +72,6 @@ public class TestDataSource extends AbstractBaseTestSource {
     List<GenericRecord> records =
         fetchNextBatch(props, (int) sourceLimit, recordInstantTime.orElse(instantTime), DEFAULT_PARTITION_NUM).collect(Collectors.toList());
     JavaRDD<GenericRecord> avroRDD = sparkContext.<GenericRecord>parallelize(records, 4);
-    return new InputBatch<>(Option.of(avroRDD), instantTime);
+    return new InputBatch<>(Option.of(avroRDD), createCheckpoint(writeTableVersion, instantTime));
   }
 }

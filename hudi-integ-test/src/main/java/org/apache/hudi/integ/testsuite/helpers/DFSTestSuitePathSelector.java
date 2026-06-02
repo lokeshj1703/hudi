@@ -20,7 +20,7 @@ package org.apache.hudi.integ.testsuite.helpers;
 
 import org.apache.hudi.common.config.TypedProperties;
 import org.apache.hudi.common.table.checkpoint.Checkpoint;
-import org.apache.hudi.common.table.checkpoint.StreamerCheckpointV2;
+import org.apache.hudi.common.util.ConfigUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.collection.ImmutablePair;
 import org.apache.hudi.common.util.collection.Pair;
@@ -43,7 +43,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static org.apache.hudi.common.table.checkpoint.CheckpointUtils.createCheckpoint;
 import static org.apache.hudi.common.util.ConfigUtils.getStringWithAltKeys;
+import static org.apache.hudi.config.HoodieWriteConfig.WRITE_TABLE_VERSION;
 
 /**
  * A custom dfs path selector used only for the hudi test suite. To be used only if workload is not run inline.
@@ -100,17 +102,18 @@ public class DFSTestSuitePathSelector extends DFSPathSelector {
         }
       }
 
+      int writeTableVersion = ConfigUtils.getIntWithAltKeys(props, WRITE_TABLE_VERSION);
       // no data to readAvro
       if (eligibleFiles.size() == 0) {
         return new ImmutablePair<>(Option.empty(),
-            lastCheckpoint.orElseGet(() -> new StreamerCheckpointV2(String.valueOf(Long.MIN_VALUE))));
+            lastCheckpoint.orElseGet(() -> createCheckpoint(writeTableVersion, String.valueOf(Long.MIN_VALUE))));
       }
       // readAvro the files out.
       String pathStr = eligibleFiles.stream().map(f -> f.getPath().toString())
           .collect(Collectors.joining(","));
 
       return new ImmutablePair<>(Option.ofNullable(pathStr),
-          new StreamerCheckpointV2(String.valueOf(nextBatchId)));
+          createCheckpoint(writeTableVersion, String.valueOf(nextBatchId)));
     } catch (IOException ioe) {
       throw new HoodieIOException(
           "Unable to readAvro from source from checkpoint: " + lastCheckpoint, ioe);

@@ -21,7 +21,7 @@ package org.apache.hudi.utilities.sources.helpers;
 import org.apache.hudi.client.common.HoodieSparkEngineContext;
 import org.apache.hudi.common.config.TypedProperties;
 import org.apache.hudi.common.table.checkpoint.Checkpoint;
-import org.apache.hudi.common.table.checkpoint.StreamerCheckpointV2;
+import org.apache.hudi.common.util.ConfigUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.ValidationUtils;
 import org.apache.hudi.common.util.collection.ImmutablePair;
@@ -45,8 +45,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static org.apache.hudi.common.table.checkpoint.CheckpointUtils.createCheckpoint;
 import static org.apache.hudi.common.util.ConfigUtils.getIntWithAltKeys;
 import static org.apache.hudi.common.util.ConfigUtils.getStringWithAltKeys;
+import static org.apache.hudi.config.HoodieWriteConfig.WRITE_TABLE_VERSION;
 import static org.apache.hudi.utilities.config.DFSPathSelectorConfig.ROOT_INPUT_PATH;
 import static org.apache.hudi.utilities.config.DatePartitionPathSelectorConfig.DATE_FORMAT;
 import static org.apache.hudi.utilities.config.DatePartitionPathSelectorConfig.DATE_PARTITION_DEPTH;
@@ -164,15 +166,16 @@ public class DatePartitionPathSelector extends DFSPathSelector {
       filteredFiles.add(f);
     }
 
+    int writeTableVersion = ConfigUtils.getIntWithAltKeys(props, WRITE_TABLE_VERSION);
     // no data to read
     if (filteredFiles.isEmpty()) {
-      return new ImmutablePair<>(Option.empty(), new StreamerCheckpointV2(String.valueOf(newCheckpointTime)));
+      return new ImmutablePair<>(Option.empty(), createCheckpoint(writeTableVersion, String.valueOf(newCheckpointTime)));
     }
 
     // read the files out.
     String pathStr = filteredFiles.stream().map(f -> f.getPath().toString()).collect(Collectors.joining(","));
 
-    return new ImmutablePair<>(Option.ofNullable(pathStr), new StreamerCheckpointV2(String.valueOf(newCheckpointTime)));
+    return new ImmutablePair<>(Option.ofNullable(pathStr), createCheckpoint(writeTableVersion, String.valueOf(newCheckpointTime)));
   }
 
   /**

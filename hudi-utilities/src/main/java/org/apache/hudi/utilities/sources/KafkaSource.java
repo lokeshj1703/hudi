@@ -50,6 +50,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.apache.hudi.common.table.checkpoint.CheckpointUtils.createCheckpoint;
 import static org.apache.hudi.common.util.ConfigUtils.getBooleanWithAltKeys;
 import static org.apache.hudi.common.util.ConfigUtils.getLongWithAltKeys;
 
@@ -132,11 +133,15 @@ public abstract class KafkaSource<T> extends Source<T> {
         totalNewMsgs, offsetGen.getTopicName(), Arrays.toString(offsetRanges));
     if (totalNewMsgs <= 0) {
       metrics.updateStreamerSourceNewMessageCount(METRIC_NAME_KAFKA_MESSAGE_IN_COUNT, 0);
-      return new InputBatch<>(Option.empty(), KafkaOffsetGen.CheckpointUtils.offsetsToStr(offsetRanges));
+      return new InputBatch<>(
+          Option.empty(),
+          createCheckpoint(writeTableVersion, KafkaOffsetGen.CheckpointUtils.offsetsToStr(offsetRanges)));
     }
     metrics.updateStreamerSourceNewMessageCount(METRIC_NAME_KAFKA_MESSAGE_IN_COUNT, totalNewMsgs);
     T newBatch = toBatch(offsetRanges);
-    return new InputBatch<>(Option.of(newBatch), KafkaOffsetGen.CheckpointUtils.offsetsToStr(offsetRanges));
+    return new InputBatch<>(
+        Option.of(newBatch),
+        createCheckpoint(writeTableVersion, KafkaOffsetGen.CheckpointUtils.offsetsToStr(offsetRanges)));
   }
 
   /**

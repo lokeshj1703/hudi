@@ -36,6 +36,8 @@ import org.slf4j.LoggerFactory;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static org.apache.hudi.common.table.checkpoint.CheckpointUtils.createCheckpoint;
+
 /**
  * A Test DataSource which scales test-data generation by using spark parallelism.
  */
@@ -59,7 +61,7 @@ public class DistributedTestDataSource extends AbstractBaseTestSource {
 
     // No new data.
     if (sourceLimit <= 0) {
-      return new InputBatch<>(Option.empty(), instantTime);
+      return new InputBatch<>(Option.empty(), createCheckpoint(writeTableVersion, instantTime));
     }
 
     TypedProperties newProps = new TypedProperties();
@@ -79,6 +81,6 @@ public class DistributedTestDataSource extends AbstractBaseTestSource {
               }
               return fetchNextBatch(newProps, perPartitionSourceLimit, instantTime, p).iterator();
             }, true);
-    return new InputBatch<>(Option.of(avroRDD), instantTime);
+    return new InputBatch<>(Option.of(avroRDD), createCheckpoint(writeTableVersion, instantTime));
   }
 }

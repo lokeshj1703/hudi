@@ -20,7 +20,6 @@ package org.apache.hudi.utilities.sources;
 
 import org.apache.hudi.common.config.TypedProperties;
 import org.apache.hudi.common.table.checkpoint.Checkpoint;
-import org.apache.hudi.common.table.checkpoint.StreamerCheckpointV2;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.exception.HoodieException;
@@ -46,6 +45,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.apache.hudi.common.table.checkpoint.CheckpointUtils.createCheckpoint;
 import static org.apache.hudi.common.util.ConfigUtils.getBooleanWithAltKeys;
 import static org.apache.hudi.common.util.ConfigUtils.getIntWithAltKeys;
 import static org.apache.hudi.common.util.ConfigUtils.getStringWithAltKeys;
@@ -112,7 +112,7 @@ public class GcsEventsSource extends RowSource {
 
   private final List<String> messagesToAck = new ArrayList<>();
 
-  private static final Checkpoint CHECKPOINT_VALUE_ZERO = new StreamerCheckpointV2("0");
+  private static final String CHECKPOINT_VALUE_ZERO = "0";
 
   private static final Logger LOG = LoggerFactory.getLogger(GcsEventsSource.class);
 
@@ -155,7 +155,7 @@ public class GcsEventsSource extends RowSource {
 
     if (messageBatch.isEmpty()) {
       LOG.info("No new data. Returning empty batch with checkpoint value: " + CHECKPOINT_VALUE_ZERO);
-      return Pair.of(Option.empty(), CHECKPOINT_VALUE_ZERO);
+      return Pair.of(Option.empty(), createCheckpoint(writeTableVersion, CHECKPOINT_VALUE_ZERO));
     }
 
     int numPartitions = (int) Math.ceil(
@@ -166,9 +166,13 @@ public class GcsEventsSource extends RowSource {
 
     StructType sourceSchema = UtilHelpers.getSourceSchema(schemaProvider);
     if (sourceSchema != null) {
-      return Pair.of(Option.of(sparkSession.read().schema(sourceSchema).json(eventRecords)), CHECKPOINT_VALUE_ZERO);
+      return Pair.of(
+          Option.of(sparkSession.read().schema(sourceSchema).json(eventRecords)),
+          createCheckpoint(writeTableVersion, CHECKPOINT_VALUE_ZERO));
     } else {
-      return Pair.of(Option.of(sparkSession.read().json(eventRecords)), CHECKPOINT_VALUE_ZERO);
+      return Pair.of(
+          Option.of(sparkSession.read().json(eventRecords)),
+          createCheckpoint(writeTableVersion, CHECKPOINT_VALUE_ZERO));
     }
   }
 

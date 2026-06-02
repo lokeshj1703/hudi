@@ -71,6 +71,11 @@ public class CheckpointUtils {
     throw new HoodieException("Checkpoint is not found in the commit metadata: " + commitMetadata.getExtraMetadata());
   }
 
+  public static Checkpoint createCheckpoint(int writeTableVersion, String checkpointToResume) {
+    return writeTableVersion >= HoodieTableVersion.EIGHT.versionCode()
+        ? new StreamerCheckpointV2(checkpointToResume) : new StreamerCheckpointV1(checkpointToResume);
+  }
+
   public static Checkpoint buildCheckpointFromGeneralSource(
       String sourceClassName, int writeTableVersion, String checkpointToResume) {
     return CheckpointUtils.shouldTargetCheckpointV2(writeTableVersion, sourceClassName)

@@ -20,7 +20,7 @@ package org.apache.hudi.utilities.sources.helpers;
 
 import org.apache.hudi.common.config.TypedProperties;
 import org.apache.hudi.common.table.checkpoint.Checkpoint;
-import org.apache.hudi.common.table.checkpoint.StreamerCheckpointV2;
+import org.apache.hudi.common.util.ConfigUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.ReflectionUtils;
 import org.apache.hudi.common.util.collection.ImmutablePair;
@@ -42,7 +42,9 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
+import static org.apache.hudi.common.table.checkpoint.CheckpointUtils.createCheckpoint;
 import static org.apache.hudi.common.util.ConfigUtils.getStringWithAltKeys;
+import static org.apache.hudi.config.HoodieWriteConfig.WRITE_TABLE_VERSION;
 
 /**
  * S3 events metadata selector class. This class provides methods to process the
@@ -156,8 +158,10 @@ public class S3EventsMetaSelector extends CloudObjectsSelector {
       for (Map<String, Object> eventRecord : eventRecords) {
         filteredEventRecords.add(SdkHttpUtils.urlDecode(MAPPER.writeValueAsString(eventRecord)));
       }
+      int writeTableVersion = ConfigUtils.getIntWithAltKeys(props, WRITE_TABLE_VERSION);
       // Return the old checkpoint if no messages to consume from queue.
-      Checkpoint newCheckpoint = newCheckpointTime == 0 ? lastCheckpoint.orElse(null) : new StreamerCheckpointV2(String.valueOf(newCheckpointTime));
+      Checkpoint newCheckpoint = newCheckpointTime == 0
+          ? lastCheckpoint.orElse(null) : createCheckpoint(writeTableVersion, String.valueOf(newCheckpointTime));
       return new ImmutablePair<>(filteredEventRecords, newCheckpoint);
     } catch (JSONException | IOException e) {
       throw new HoodieException("Unable to read from SQS: ", e);

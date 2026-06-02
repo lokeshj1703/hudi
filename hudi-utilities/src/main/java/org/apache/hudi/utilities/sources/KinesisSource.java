@@ -52,6 +52,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static org.apache.hudi.common.table.checkpoint.CheckpointUtils.createCheckpoint;
 import static org.apache.hudi.common.util.ConfigUtils.getBooleanWithAltKeys;
 
 public abstract class KinesisSource<T> extends Source<T> {
@@ -100,7 +101,7 @@ public abstract class KinesisSource<T> extends Source<T> {
     if (shardRangesWithUnreadRecords.length == 0) {
       metrics.updateStreamerSourceNewMessageCount(METRIC_NAME_KINESIS_MESSAGE_IN_COUNT, 0);
       String checkpointStr = lastCheckpoint.isPresent() ? lastCheckpoint.get().getCheckpointKey() : "";
-      return new InputBatch<>(Option.empty(), checkpointStr);
+      return new InputBatch<>(Option.empty(), createCheckpoint(writeTableVersion, checkpointStr));
     }
     // STEP 3: Otherwise, do the read.
     T batch = toBatch(shardRangesWithUnreadRecords, sourceLimit);
@@ -114,7 +115,7 @@ public abstract class KinesisSource<T> extends Source<T> {
     LOG.info("Read {} records from Kinesis stream {} with {} shards, checkpoint: {}",
         totalMsgs, offsetGen.getStreamName(), shardRangesWithUnreadRecords.length, checkpointStr);
 
-    return new InputBatch<>(Option.of(batch), checkpointStr);
+    return new InputBatch<>(Option.of(batch), createCheckpoint(writeTableVersion, checkpointStr));
   }
 
   /** Upper bound on consecutive empty GetRecords responses before giving up on a shard. */

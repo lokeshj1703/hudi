@@ -376,6 +376,15 @@ public class StreamSync implements Serializable, Closeable {
             .setBasePath(cfg.targetBasePath)
             .setTimeGeneratorConfig(HoodieTimeGeneratorConfig.newBuilder().fromProperties(props).withPath(cfg.targetBasePath).build())
             .build();
+        // Backfill hoodie.write.table.version from the on-disk table when absent, so downstream
+        // code does not fall back to HoodieTableVersion.current() and emit v2 checkpoint keys on
+        // a v6 commit (ENG-42180).
+        if (!ConfigUtils.containsConfigProperty(props, WRITE_TABLE_VERSION)) {
+          HoodieTableVersion onDiskVersion = metaClient.getTableConfig().getTableVersion();
+          props.setProperty(WRITE_TABLE_VERSION.key(), String.valueOf(onDiskVersion.versionCode()));
+          LOG.info("hoodie.write.table.version not set in streamer props; backfilled from on-disk "
+              + "table version {} at {}", onDiskVersion.versionCode(), cfg.targetBasePath);
+        }
         if (refreshTimeline) {
           switch (metaClient.getTableType()) {
             case COPY_ON_WRITE:

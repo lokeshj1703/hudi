@@ -87,13 +87,13 @@ public class TestSourceFormatAdapter {
   }
 
   private void setupRowSource(Dataset<Row> ds, TypedProperties properties, SchemaProvider schemaProvider) {
-    InputBatch<Dataset<Row>> batch = new InputBatch<>(Option.of(ds), DUMMY_CHECKPOINT, schemaProvider);
+    InputBatch<Dataset<Row>> batch = new InputBatch<>(Option.of(ds), new StreamerCheckpointV2(DUMMY_CHECKPOINT), schemaProvider);
     testRowDataSource = new TestRowDataSource(properties, jsc, spark, schemaProvider, batch);
   }
 
   private void setupJsonSource(JavaRDD<String> ds, Schema schema) {
     SchemaProvider basicSchemaProvider = new BasicSchemaProvider(schema);
-    InputBatch<JavaRDD<String>> batch = new InputBatch<>(Option.of(ds), DUMMY_CHECKPOINT, basicSchemaProvider);
+    InputBatch<JavaRDD<String>> batch = new InputBatch<>(Option.of(ds), new StreamerCheckpointV2(DUMMY_CHECKPOINT), basicSchemaProvider);
     testJsonDataSource = new TestJsonDataSource(new TypedProperties(), jsc, spark, basicSchemaProvider, batch);
   }
 

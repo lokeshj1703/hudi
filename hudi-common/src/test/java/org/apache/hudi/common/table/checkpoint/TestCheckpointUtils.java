@@ -216,6 +216,18 @@ public class TestCheckpointUtils {
     assertEquals(isV2Checkpoint, CheckpointUtils.buildCheckpointFromGeneralSource(sourceClassName, version, "ignored") instanceof StreamerCheckpointV2);
   }
 
+  @ParameterizedTest
+  @CsvSource({"6, false", "7, false", "8, true", "9, true"})
+  public void testCreateCheckpoint(int writeTableVersion, boolean expectV2) {
+    Checkpoint checkpoint = CheckpointUtils.createCheckpoint(writeTableVersion, CHECKPOINT_TO_RESUME);
+    if (expectV2) {
+      assertInstanceOf(StreamerCheckpointV2.class, checkpoint);
+    } else {
+      assertInstanceOf(StreamerCheckpointV1.class, checkpoint);
+    }
+    assertEquals(CHECKPOINT_TO_RESUME, checkpoint.getCheckpointKey());
+  }
+
   @Test
   public void testBuildCheckpointFromGeneralSource() {
     // Test V2 checkpoint creation (newer table version + general source)

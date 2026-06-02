@@ -27,6 +27,7 @@ import org.apache.hudi.common.model.HoodieCommitMetadata;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.HoodieTableVersion;
 import org.apache.hudi.common.table.checkpoint.Checkpoint;
+import org.apache.hudi.common.table.checkpoint.StreamerCheckpointV2;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.common.util.collection.Triple;
@@ -103,10 +104,10 @@ public class TestStreamSync extends SparkClientFunctionalTestHarness {
     SourceFormatAdapter sourceFormatAdapter = mock(SourceFormatAdapter.class);
     SchemaProvider inputBatchSchemaProvider = getSchemaProvider("InputBatch", false);
     Option<Dataset<Row>> fakeDataFrame = Option.of(mock(Dataset.class));
-    InputBatch<Dataset<Row>> fakeRowInputBatch = new InputBatch<>(fakeDataFrame, "chkpt", inputBatchSchemaProvider);
+    InputBatch<Dataset<Row>> fakeRowInputBatch = new InputBatch<>(fakeDataFrame, new StreamerCheckpointV2("chkpt"), inputBatchSchemaProvider);
     when(sourceFormatAdapter.fetchNewDataInRowFormat(any(), anyLong())).thenReturn(fakeRowInputBatch);
     //batch is empty because we don't want getBatch().map() to do anything because it calls static method we can't mock
-    InputBatch<JavaRDD<GenericRecord>> fakeAvroInputBatch = new InputBatch<>(Option.empty(), "chkpt", inputBatchSchemaProvider);
+    InputBatch<JavaRDD<GenericRecord>> fakeAvroInputBatch = new InputBatch<>(Option.empty(), new StreamerCheckpointV2("chkpt"), inputBatchSchemaProvider);
     when(sourceFormatAdapter.fetchNewDataInAvroFormat(any(),anyLong())).thenReturn(fakeAvroInputBatch);
 
     //transformer
