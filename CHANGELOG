@@ -1286,3 +1286,8 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 
 --- [2026-06-01 05:03:45] [release-v1.242.0] ---
 [AUDIT-1071]: Changelog for release-v1.241.0 (#1900)
+
+--- [2026-06-02 17:33:27] [release-v1.243.0] ---
+[ENG-41975] Reuse Inflater/Deflater in BitCaskDiskMap to avoid JDK8 finalizer contention (#1876)
+[ENG-42100] fix: Fix NPE due to race condition while handling rocksdb handles (#1912)
+[AUDIT-5686]: Changelog for release-v1.242.0 (#1909)
