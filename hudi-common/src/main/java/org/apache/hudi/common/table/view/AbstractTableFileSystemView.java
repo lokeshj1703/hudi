@@ -274,15 +274,19 @@ public abstract class AbstractTableFileSystemView implements SyncableFileSystemV
   public void close() {
     try {
       writeLock.lock();
-      this.metaClient = null;
-      this.visibleCommitsAndCompactionTimeline = null;
-      tableMetadata.close();
+      closeResources();
       clear();
     } catch (Exception ex) {
       throw new HoodieException("Unable to close file system view", ex);
     } finally {
       writeLock.unlock();
     }
+  }
+
+  protected void closeResources() throws Exception {
+    this.metaClient = null;
+    this.visibleCommitsAndCompactionTimeline = null;
+    tableMetadata.close();
   }
 
   /**

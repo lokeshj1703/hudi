@@ -33,6 +33,7 @@ import org.apache.hudi.common.util.RocksDBSchemaHelper;
 import org.apache.hudi.common.util.ValidationUtils;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.common.util.collection.RocksDBDAO;
+import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.metadata.HoodieTableMetadata;
 
 import org.apache.hadoop.fs.FileStatus;
@@ -567,10 +568,18 @@ public class RocksDbBasedFileSystemView extends IncrementalTimelineSyncFileSyste
 
   @Override
   public void close() {
-    LOG.info("Closing Rocksdb !!");
-    closed = true;
-    rocksDB.close();
-    LOG.info("Closed Rocksdb !!");
+    try {
+      writeLock.lock();
+      LOG.info("Closing Rocksdb !!");
+      closed = true;
+      closeResources();
+      rocksDB.close();
+      LOG.info("Closed Rocksdb !!");
+    } catch (Exception e) {
+      throw new HoodieException("Unable to close file system view", e);
+    } finally {
+      writeLock.unlock();
+    }
   }
 
   @Override
