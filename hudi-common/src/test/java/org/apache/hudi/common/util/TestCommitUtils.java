@@ -83,7 +83,8 @@ public class TestCommitUtils {
     assertEquals("f1", commitMetadata.getPartitionToWriteStats().get("p1").get(0).getFileId());
     assertEquals("f2", commitMetadata.getPartitionToWriteStats().get("p2").get(0).getFileId());
     assertEquals(WriteOperationType.INSERT, commitMetadata.getOperationType());
-    assertEquals(TRIP_SCHEMA, commitMetadata.getMetadata(HoodieCommitMetadata.SCHEMA_KEY));
+    assertEquals(CommitUtils.sanitizeSchemaForCommitMetadata(TRIP_SCHEMA),
+        commitMetadata.getMetadata(HoodieCommitMetadata.SCHEMA_KEY));
   }
 
   @Test
@@ -110,7 +111,8 @@ public class TestCommitUtils {
     assertEquals("f1", commitMetadata.getPartitionToWriteStats().get("p1").get(0).getFileId());
     assertEquals("f2", commitMetadata.getPartitionToWriteStats().get("p2").get(0).getFileId());
     assertEquals(WriteOperationType.INSERT, commitMetadata.getOperationType());
-    assertEquals(TRIP_SCHEMA, commitMetadata.getMetadata(HoodieCommitMetadata.SCHEMA_KEY));
+    assertEquals(CommitUtils.sanitizeSchemaForCommitMetadata(TRIP_SCHEMA),
+        commitMetadata.getMetadata(HoodieCommitMetadata.SCHEMA_KEY));
   }
 
   @Test

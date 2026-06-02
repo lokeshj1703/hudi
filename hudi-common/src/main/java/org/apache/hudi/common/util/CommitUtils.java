@@ -18,6 +18,7 @@
 
 package org.apache.hudi.common.util;
 
+import org.apache.hudi.avro.HoodieAvroUtils;
 import org.apache.hudi.common.model.HoodieCommitMetadata;
 import org.apache.hudi.common.model.HoodieReplaceCommitMetadata;
 import org.apache.hudi.common.model.HoodieTableType;
@@ -94,10 +95,30 @@ public class CommitUtils {
     if (extraMetadata.isPresent()) {
       extraMetadata.get().forEach(commitMetadata::addMetadata);
     }
-    commitMetadata.addMetadata(HoodieCommitMetadata.SCHEMA_KEY, (schemaToStoreInCommit == null || schemaToStoreInCommit.equals(NULL_SCHEMA_STR))
-        ? "" : schemaToStoreInCommit);
+    commitMetadata.addMetadata(HoodieCommitMetadata.SCHEMA_KEY,
+        sanitizeSchemaForCommitMetadata(schemaToStoreInCommit));
     commitMetadata.setOperationType(operationType);
     return commitMetadata;
+  }
+
+  /**
+   * Returns the value to persist under {@link HoodieCommitMetadata#SCHEMA_KEY}.
+   * The schema stored in commit extraMetadata must be the user/write schema and
+   * must NOT contain Hudi meta fields ({@code _hoodie_commit_time}, etc.). If
+   * the caller-provided schema has meta fields (e.g. because some upstream code
+   * mutated the in-memory write config schema with reader-schema-with-meta-fields,
+   * or because a previously-polluted SCHEMA_KEY was read back into the config),
+   * this strips them so the persisted schema is always clean.
+   */
+  public static String sanitizeSchemaForCommitMetadata(String schemaToStoreInCommit) {
+    if (StringUtils.isNullOrEmpty(schemaToStoreInCommit) || schemaToStoreInCommit.equals(NULL_SCHEMA_STR)) {
+      return "";
+    }
+    Schema schema = new Schema.Parser().parse(schemaToStoreInCommit);
+    if (HoodieAvroUtils.isSchemaNull(schema)) {
+      return "";
+    }
+    return HoodieAvroUtils.removeMetadataFields(schema).toString();
   }
 
   private static HoodieCommitMetadata buildMetadataFromStats(List<HoodieWriteStat> writeStats,
