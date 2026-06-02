@@ -53,6 +53,7 @@ import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.view.FileSystemViewManager;
 import org.apache.hudi.common.table.view.SpillableMapBasedFileSystemView;
 import org.apache.hudi.common.table.view.SyncableFileSystemView;
+import org.apache.hudi.common.util.ConfigUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.ValidationUtils;
 import org.apache.hudi.common.util.VisibleForTesting;
@@ -82,6 +83,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -129,6 +131,50 @@ public class HoodieMetadataWriteUtils {
   private static final long MDT_MAX_HFILE_SIZE_BYTES = 10 * 1024 * 1024 * 1024L; // 10GB
 
   /**
+   * Stripped keys that must not be forwarded from {@code hoodie.metadata.writer.<X>} passthrough
+   * because overriding them would corrupt MDT identity or break invariants that the rest of
+   * {@link #createMetadataWriteConfig} enforces (table name, base path, recordkey, concurrency
+   * mode, auto-commit, schema, manual cleaner/compaction/archival triggers, etc.).
+   * Keys are referenced via {@code ConfigProperty.key()} to avoid string drift.
+   */
+  public static final Set<String> METADATA_WRITER_PASSTHROUGH_BLOCKLIST;
+
+  static {
+    Set<String> blocked = new HashSet<>(Arrays.asList(
+        // Identity
+        HoodieWriteConfig.TBL_NAME.key(),
+        HoodieWriteConfig.BASE_PATH.key(),
+        HoodieTableConfig.RECORDKEY_FIELDS.key(),
+        "hoodie.datasource.write.recordkey.field",
+        HoodieTableConfig.TYPE.key(),
+        HoodieWriteConfig.KEYGENERATOR_CLASS_NAME.key(),
+        "hoodie.datasource.write.keygenerator.class",
+        "hoodie.datasource.write.partitionpath.field",
+        "hoodie.datasource.write.precombine.field",
+        // Existing checkArgument invariants
+        HoodieMetadataConfig.ENABLE.key(),
+        HoodieWriteConfig.WRITE_STATUS_CLASS_NAME.key(),
+        HoodieCleanConfig.AUTO_CLEAN.key(),
+        HoodieCompactionConfig.INLINE_COMPACT.key(),
+        // Concurrency
+        HoodieWriteConfig.WRITE_CONCURRENCY_MODE.key(),
+        HoodieLockConfig.LOCK_PROVIDER_CLASS_NAME.key(),
+        // Service-trigger / markers
+        HoodieArchivalConfig.AUTO_ARCHIVE.key(),
+        HoodieCleanConfig.ASYNC_CLEAN.key(),
+        HoodieWriteConfig.ROLLBACK_USING_MARKERS_ENABLE.key(),
+        HoodieWriteConfig.MARKERS_TYPE.key(),
+        // Schema / meta fields
+        HoodieWriteConfig.AVRO_SCHEMA_STRING.key(),
+        HoodieWriteConfig.AVRO_SCHEMA_VALIDATE_ENABLE.key(),
+        HoodieTableConfig.POPULATE_META_FIELDS.key(),
+        // Compaction strategy must remain UnBoundedCompactionStrategy
+        HoodieCompactionConfig.COMPACTION_STRATEGY.key()
+    ));
+    METADATA_WRITER_PASSTHROUGH_BLOCKLIST = Collections.unmodifiableSet(blocked);
+  }
+
+  /**
    * Create a {@code HoodieWriteConfig} to use for the Metadata Table.
    *
    * @param writeConfig                {@code HoodieWriteConfig} of the main dataset writer
@@ -173,7 +219,34 @@ public class HoodieMetadataWriteUtils {
     }
 
     // Create the write config for the metadata table by borrowing options from the main write config.
-    HoodieWriteConfig.Builder builder = HoodieWriteConfig.newBuilder()
+    HoodieWriteConfig.Builder builder = HoodieWriteConfig.newBuilder();
+
+    // Apply hoodie.metadata.writer.* passthrough FIRST so that curated .withXxx(...) calls below
+    // (and explicit properties.put(...) blocks) overwrite any conflicting passthrough values.
+    List<String> droppedPassthrough = new ArrayList<>();
+    List<String> skippedEmptyPassthrough = new ArrayList<>();
+    Properties passthrough = ConfigUtils.extractWithPrefix(
+        writeConfig.getProps(),
+        HoodieMetadataConfig.METADATA_WRITER_CONFIG_PREFIX,
+        METADATA_WRITER_PASSTHROUGH_BLOCKLIST,
+        droppedPassthrough,
+        skippedEmptyPassthrough);
+    if (!passthrough.isEmpty()) {
+      builder.withProperties(passthrough);
+      LOG.info("Applied {} hoodie.metadata.writer.* passthrough overrides to MDT '{}' writer config: keys={}",
+          passthrough.size(), tableName, passthrough.stringPropertyNames());
+    }
+    if (!droppedPassthrough.isEmpty()) {
+      LOG.warn("Ignored {} hoodie.metadata.writer.* passthrough overrides for MDT '{}' because the "
+          + "stripped keys are on the MDT identity/invariants blocklist: {}",
+          droppedPassthrough.size(), tableName, droppedPassthrough);
+    }
+    if (!skippedEmptyPassthrough.isEmpty()) {
+      LOG.debug("Skipped {} hoodie.metadata.writer.* passthrough overrides for MDT '{}' due to null/empty values: {}",
+          skippedEmptyPassthrough.size(), tableName, skippedEmptyPassthrough);
+    }
+
+    builder
         .withEngineType(writeConfig.getEngineType())
         .withWriteTableVersion(writeConfig.getWriteVersion().versionCode())
         .withMergeAllowDuplicateOnInserts(false)
