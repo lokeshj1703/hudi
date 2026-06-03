@@ -16,10 +16,9 @@
  */
 
 import org.apache.spark.sql.SaveMode
-import org.apache.hudi.common.table.HoodieTableConfig
 import org.apache.hudi.DataSourceWriteOptions._
 import org.apache.hudi.common.model.debezium.DebeziumConstants
-import org.apache.hudi.common.model.DefaultHoodieRecordPayload
+
 import spark.implicits._
 
 val baseDir = "${BASE_PATH}"
@@ -102,7 +101,7 @@ def createPayloadTable(payloadName: String, payloadClass: String): Unit = {
 
   // Payload-specific configuration
   val payloadConfig = Map(
-    "hoodie.datasource.write.payload.class.name" -> payloadClass
+    "hoodie.datasource.write.payload.class" -> payloadClass
   )
 
   // Determine ordering fields based on payload class
@@ -117,19 +116,9 @@ def createPayloadTable(payloadName: String, payloadClass: String): Unit = {
   // Record key and partition configuration
   val tableStructureConfig = Map(
     RECORDKEY_FIELD.key() -> "_event_lsn",
-    HoodieTableConfig.PRECOMBINE_FIELD.key() -> orderingFields,
+    PRECOMBINE_FIELD.key() -> orderingFields,
     PARTITIONPATH_FIELD.key() -> ""  // Non-partitioned table
   )
-
-  // Delete marker configuration for certain payloads
-  val deleteConfig = if (payloadClass.contains("DefaultHoodieRecordPayload")) {
-    Map(
-      DefaultHoodieRecordPayload.DELETE_KEY -> "Op",
-      DefaultHoodieRecordPayload.DELETE_MARKER -> "D"
-    )
-  } else {
-    Map.empty[String, String]
-  }
 
   // Service configurations to enable table management operations
   val serviceConfig = Map(
@@ -140,7 +129,7 @@ def createPayloadTable(payloadName: String, payloadClass: String): Unit = {
   )
 
   // Combine all configurations
-  val allConfig = baseConfig ++ payloadConfig ++ tableStructureConfig ++ deleteConfig ++ serviceConfig
+  val allConfig = baseConfig ++ payloadConfig ++ tableStructureConfig ++ serviceConfig
 
   // 1. Initial insert
   val initialDf = spark.createDataFrame(initialData).toDF(columns: _*)

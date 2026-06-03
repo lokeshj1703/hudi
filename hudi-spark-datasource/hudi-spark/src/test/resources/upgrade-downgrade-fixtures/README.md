@@ -35,6 +35,16 @@ Tables that use complex key generators for testing key generator compatibility:
 - `hudi-v8-table-complex-keygen.zip` - Hudi 1.0.2, Table Version 8
 - `hudi-v9-table-complex-keygen.zip` - Hudi 1.1.0, Table Version 9
 
+### Index Type Tables (`index-tables/`)
+MOR tables using different index types, generated with Hudi 0.14.0 (Table Version 6).
+Note: RECORD_LEVEL_INDEX / GLOBAL_RECORD_LEVEL_INDEX are 1.x only and not included here.
+- `hudi-v6-table-index-bloom.zip` - MOR, BLOOM index
+- `hudi-v6-table-index-global-bloom.zip` - MOR, GLOBAL_BLOOM index (cross-partition uniqueness)
+- `hudi-v6-table-index-simple.zip` - MOR, SIMPLE index
+- `hudi-v6-table-index-global-simple.zip` - MOR, GLOBAL_SIMPLE index (cross-partition uniqueness)
+- `hudi-v6-table-index-bucket.zip` - MOR, BUCKET index (4 buckets, clustering disabled)
+- `hudi-v6-table-index-record-index.zip` - MOR, RECORD_INDEX (metadata-table-based RLI)
+
 ### Unsupported Tables (`unsupported-upgrade-tables`)
 Tables that are not supported for upgrade/downgrade testing such as v4 and v5. (We support v6 and above)
 - `hudi-v4-mor-table.zip` - Hudi 0.14.0, Table Version 4
@@ -101,6 +111,9 @@ The `generate-fixtures.sh` script supports the following parameters:
 
 # Generate only version 6 complex-keygen table
 ./generate-fixtures.sh --version 6 --script-name generate-fixture-complex-keygen.scala
+
+# Generate all 4 MOR index-type tables (BLOOM, SIMPLE, BUCKET, RECORD_LEVEL) with Hudi 0.14.0
+./generate-fixtures.sh --version 6 --script-name generate-fixture-index.scala
 ```
 
 #### Available Script Templates
@@ -109,8 +122,10 @@ The script supports different Scala templates located in the `scala-templates/` 
 
 | Script Name | Description | Output Directory | Output Filename Pattern |
 |-------------|-------------|-------------------|-------------------------|
-| `generate-fixture-mor.scala` (default) | mor tables with compaction, clustering, archival | `mor-tables/` | `hudi-v{X}-mor-table.zip` |
+| `generate-fixture-mor.scala` (default) | MOR tables with compaction, clustering, archival | `mor-tables/` | `hudi-v{X}-table-mor.zip` |
+| `generate-fixture-cow.scala` | COW tables with clustering and archival | `cow-tables/` | `hudi-v{X}-table-cow.zip` |
 | `generate-fixture-complex-keygen.scala` | Complex key generator tables | `complex-keygen-tables/` | `hudi-v{X}-table-complex-keygen.zip` |
+| `generate-fixture-index.scala` | MOR tables for all 4 index types (single script, multiple outputs) | `index-tables/` | `hudi-v6-table-index-{type}.zip` |
 
 **Note**: The output directory and filename pattern are automatically determined by the template name:
 - Templates containing "mor" → `mor-tables/` directory

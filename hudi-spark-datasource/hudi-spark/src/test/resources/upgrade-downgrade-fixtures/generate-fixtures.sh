@@ -80,6 +80,9 @@ elif [[ "$SCALA_SCRIPT_NAME" == *"complex-keygen"* ]]; then
 elif [[ "$SCALA_SCRIPT_NAME" == *"payload"* ]]; then
     FIXTURES_DIR="$SCRIPT_DIR/payload-tables"
     echo "Using payload tables directory: $FIXTURES_DIR"
+elif [[ "$SCALA_SCRIPT_NAME" == *"index"* ]]; then
+    FIXTURES_DIR="$SCRIPT_DIR/index-tables"
+    echo "Using index tables directory: $FIXTURES_DIR"
 else
     # Default fallback
     FIXTURES_DIR="$SCRIPT_DIR/complex-keygen-tables"
@@ -260,8 +263,9 @@ generate_fixture() {
 
     # Copy template and substitute variables
     cp "$SCRIPT_DIR/scala-templates/$actual_script_name" "$temp_script"
-    # For payload tables, use the fixtures directory as base path, not the specific fixture path
-    if [[ "$SCALA_SCRIPT_NAME" == *"payload"* ]]; then
+    # For multi-table scripts (payload, index), BASE_PATH is the fixtures directory so the
+    # Scala script can create per-variant subdirectories inside it.
+    if [[ "$SCALA_SCRIPT_NAME" == *"payload"* ]] || [[ "$SCALA_SCRIPT_NAME" == *"index"* ]]; then
         sed -i.bak \
             -e "s/\${FIXTURE_NAME}/$fixture_name/g" \
             -e "s/\${TABLE_NAME}/$table_name/g" \
@@ -360,10 +364,26 @@ echo "Fixture generation completed!"
 echo ""
 echo "Compressing fixture tables..."
 
-# Handle payload tables differently (multiple tables created by one script)
+# Multi-table scripts (payload, index) create one subdirectory per variant;
+# compress each subdirectory individually.
 if [[ "$SCALA_SCRIPT_NAME" == *"payload"* ]]; then
-    # For payload tables, compress each individual payload table directory
     for fixture_dir in "$FIXTURES_DIR"/hudi-v*-table-payload-*; do
+        if [ -d "$fixture_dir" ]; then
+            fixture_name=$(basename "$fixture_dir")
+            echo "Compressing $fixture_name..."
+            zip_name="${fixture_name}.zip"
+            (cd "$FIXTURES_DIR" && zip -r -q -X "$zip_name" "$fixture_name")
+            if [ $? -eq 0 ]; then
+                rm -rf "$fixture_dir"
+                echo "Created $zip_name"
+            else
+                echo "ERROR: Failed to compress $fixture_name"
+                exit 1
+            fi
+        fi
+    done
+elif [[ "$SCALA_SCRIPT_NAME" == *"index"* ]]; then
+    for fixture_dir in "$FIXTURES_DIR"/hudi-v*-table-index-*; do
         if [ -d "$fixture_dir" ]; then
             fixture_name=$(basename "$fixture_dir")
             echo "Compressing $fixture_name..."
