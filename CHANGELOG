@@ -1291,3 +1291,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 [ENG-41975] Reuse Inflater/Deflater in BitCaskDiskMap to avoid JDK8 finalizer contention (#1876)
 [ENG-42100] fix: Fix NPE due to race condition while handling rocksdb handles (#1912)
 [AUDIT-5686]: Changelog for release-v1.242.0 (#1909)
+
+--- [2026-06-03 17:40:27] [release-v1.244.0] ---
+[ENG-42408] [MINOR] fix: strip Hudi meta fields from schema persisted in commit extraMetadata (#1901)
+[AUDIT-1071]: Changelog for release-v1.243.0 (#1914)
