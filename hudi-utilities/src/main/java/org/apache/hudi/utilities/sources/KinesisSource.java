@@ -101,7 +101,7 @@ public abstract class KinesisSource<T> extends Source<T> {
     if (shardRangesWithUnreadRecords.length == 0) {
       metrics.updateStreamerSourceNewMessageCount(METRIC_NAME_KINESIS_MESSAGE_IN_COUNT, 0);
       String checkpointStr = lastCheckpoint.isPresent() ? lastCheckpoint.get().getCheckpointKey() : "";
-      return new InputBatch<>(Option.empty(), createCheckpoint(writeTableVersion, checkpointStr));
+      return new InputBatch<>(Option.empty(), createCheckpoint(checkpointStr));
     }
     // STEP 3: Otherwise, do the read.
     T batch = toBatch(shardRangesWithUnreadRecords, sourceLimit);
@@ -115,7 +115,7 @@ public abstract class KinesisSource<T> extends Source<T> {
     LOG.info("Read {} records from Kinesis stream {} with {} shards, checkpoint: {}",
         totalMsgs, offsetGen.getStreamName(), shardRangesWithUnreadRecords.length, checkpointStr);
 
-    return new InputBatch<>(Option.of(batch), createCheckpoint(writeTableVersion, checkpointStr));
+    return new InputBatch<>(Option.of(batch), createCheckpoint(checkpointStr));
   }
 
   /** Upper bound on consecutive empty GetRecords responses before giving up on a shard. */

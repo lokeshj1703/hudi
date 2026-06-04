@@ -26,6 +26,7 @@ import org.apache.hudi.common.table.checkpoint.StreamerCheckpointV2;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.utilities.config.DFSPathSelectorConfig;
+import org.apache.hudi.utilities.config.JdbcSourceConfig;
 import org.apache.hudi.utilities.ingestion.HoodieIngestionMetrics;
 import org.apache.hudi.utilities.schema.SchemaProvider;
 import org.apache.hudi.utilities.sources.helpers.DFSPathSelector;
@@ -34,6 +35,7 @@ import org.apache.hudi.utilities.sources.helpers.KinesisOffsetGen;
 import org.apache.hudi.utilities.sources.helpers.KinesisOffsetGen.KinesisShardRange;
 import org.apache.hudi.utilities.sources.helpers.gcs.PubsubMessagesFetcher;
 import org.apache.hudi.utilities.streamer.DefaultStreamContext;
+import org.apache.hudi.utilities.streamer.StreamerCheckpointUtils;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
@@ -42,7 +44,10 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.StructType;
 import org.apache.spark.streaming.kafka010.OffsetRange;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -50,15 +55,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
 import static org.apache.hudi.config.HoodieWriteConfig.WRITE_TABLE_VERSION;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -66,10 +75,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Validates that every source emits a checkpoint whose version matches the configured write table
- * version: V1 for v6, V2 for v8. Each source is driven through a Testable subclass that stubs out
- * external I/O; helper-based sources (DFS family, S3EventsSource) are covered transitively via the
- * helper tests.
+ * Validates that every non-incremental streamer source emits a V1 checkpoint regardless of the
+ * configured write table version or the wrapper class of the input checkpoint (so V2 keys
+ * persisted by older releases are read on input but never written back as V2). Hudi incremental
+ * sources own their own V1/V2 semantics and are exercised by
+ * {@link #testS3AndGcsIncrSourcesStayV1OnBothTableVersions()} plus
+ * {@code TestHoodieIncrSource} family.
  */
 class TestStreamerSourceCheckpointVersion {
 
@@ -107,7 +118,7 @@ class TestStreamerSourceCheckpointVersion {
     DFSPathSelector selector = new DFSPathSelector(props, hadoopConf);
     Pair<Option<String>, Checkpoint> result =
         selector.getNextFilePathsAndMaxModificationTime(jsc, Option.empty(), Long.MAX_VALUE);
-    assertVersion(result.getRight(), writeTableVersion);
+    assertV1(result.getRight());
   }
 
   // Covers AvroKafkaSource, JsonKafkaSource, ProtoKafkaSource.
@@ -121,7 +132,7 @@ class TestStreamerSourceCheckpointVersion {
     when(offsetGen.getTopicName()).thenReturn("t");
     source.offsetGen = offsetGen;
     InputBatch<String> batch = source.fetchNext(makeInputCheckpoint(inputKind, "k"), 1L);
-    assertVersion(batch.getCheckpointForNextBatch(), writeTableVersion);
+    assertV1(batch.getCheckpointForNextBatch());
   }
 
   // Covers JsonKinesisSource.
@@ -135,7 +146,7 @@ class TestStreamerSourceCheckpointVersion {
         new KinesisShardRange[0]);
     source.setOffsetGen(offsetGen);
     InputBatch<JavaRDD<String>> batch = source.fetchNext(makeInputCheckpoint(inputKind, "s"), 1L);
-    assertVersion(batch.getCheckpointForNextBatch(), writeTableVersion);
+    assertV1(batch.getCheckpointForNextBatch());
   }
 
   @ParameterizedTest
@@ -146,7 +157,7 @@ class TestStreamerSourceCheckpointVersion {
         "checkpoint", Dataset.class, boolean.class, Option.class);
     m.setAccessible(true);
     Checkpoint c = (Checkpoint) m.invoke(source, null, false, makeInputCheckpoint(inputKind, "k"));
-    assertVersion(c, writeTableVersion);
+    assertV1(c);
   }
 
   @ParameterizedTest
@@ -160,7 +171,7 @@ class TestStreamerSourceCheckpointVersion {
     SqlFileBasedSource source = new SqlFileBasedSource(props, jsc, spark, null);
     Pair<Option<Dataset<Row>>, Checkpoint> result =
         invokeRowSourceFetch(source, makeInputCheckpoint(inputKind, "k"));
-    assertVersion(result.getRight(), writeTableVersion);
+    assertV1(result.getRight());
   }
 
   @ParameterizedTest
@@ -175,7 +186,7 @@ class TestStreamerSourceCheckpointVersion {
     @SuppressWarnings("unchecked")
     Option<Checkpoint> result = (Option<Checkpoint>) m.invoke(
         source, makeInputCheckpoint(inputKind, "00000000000000"));
-    assertVersion(result.get(), writeTableVersion);
+    assertV1(result.get());
   }
 
   @ParameterizedTest
@@ -189,7 +200,71 @@ class TestStreamerSourceCheckpointVersion {
     GcsEventsSource source = new GcsEventsSource(props, jsc, spark, null, fetcher);
     Pair<Option<Dataset<Row>>, Checkpoint> result =
         invokeRowSourceFetch(source, makeInputCheckpoint(inputKind, "k"));
-    assertVersion(result.getRight(), writeTableVersion);
+    assertV1(result.getRight());
+  }
+
+  @ParameterizedTest
+  @EnumSource(InputCheckpointKind.class)
+  void testJdbcSourceIncrementalWithMaxValueEmitsV1(InputCheckpointKind inputKind) throws Exception {
+    TypedProperties props = propsWith(8);
+    props.setProperty(JdbcSourceConfig.INCREMENTAL_COLUMN.key(), "idx");
+    JdbcSource source = new JdbcSource(props, jsc, spark, null);
+    StructType schema = new StructType().add("idx", DataTypes.StringType, true);
+    List<Row> rows = Arrays.asList(RowFactory.create("100"), RowFactory.create("200"));
+    Dataset<Row> dataset = spark.createDataFrame(rows, schema);
+    Method m = JdbcSource.class.getDeclaredMethod(
+        "checkpoint", Dataset.class, boolean.class, Option.class);
+    m.setAccessible(true);
+    Checkpoint c = (Checkpoint) m.invoke(source, dataset, true, makeInputCheckpoint(inputKind, "k"));
+    assertV1(c);
+    assertEquals("200", c.getCheckpointKey());
+  }
+
+  // Drives the isIncremental + max==null pass-through to confirm it re-wraps a V2 input as V1.
+  @ParameterizedTest
+  @EnumSource(InputCheckpointKind.class)
+  void testJdbcSourcePassThroughEmitsV1(InputCheckpointKind inputKind) throws Exception {
+    TypedProperties props = propsWith(8);
+    props.setProperty(JdbcSourceConfig.INCREMENTAL_COLUMN.key(), "idx");
+    JdbcSource source = new JdbcSource(props, jsc, spark, null);
+    StructType schema = new StructType().add("idx", DataTypes.StringType, true);
+    List<Row> rows = Collections.singletonList(RowFactory.create((Object) null));
+    Dataset<Row> nullColDataset = spark.createDataFrame(rows, schema);
+    Method m = JdbcSource.class.getDeclaredMethod(
+        "checkpoint", Dataset.class, boolean.class, Option.class);
+    m.setAccessible(true);
+    Checkpoint c = (Checkpoint) m.invoke(source, nullColDataset, true, makeInputCheckpoint(inputKind, "k"));
+    assertV1(c);
+  }
+
+  // Input key sorts after the only commit on disk so findCommitToPull returns empty and
+  // readFromCheckpoint enters its pass-through branch.
+  @ParameterizedTest
+  @EnumSource(InputCheckpointKind.class)
+  void testHiveIncrPullSourcePassThroughEmitsV1(InputCheckpointKind inputKind) throws IOException {
+    Files.createDirectories(tempDir.resolve("20200101000000"));
+    TypedProperties props = propsWith(8);
+    props.setProperty("hoodie.streamer.source.incrpull.root", tempDir.toString());
+    HiveIncrPullSource source = new HiveIncrPullSource(props, jsc, spark, null);
+    InputBatch<?> batch = source.readFromCheckpoint(
+        makeInputCheckpoint(inputKind, "30000000000000"), 1L);
+    assertV1(batch.getCheckpointForNextBatch());
+  }
+
+  @ParameterizedTest
+  @CsvSource({"6, V1", "6, V2", "8, V1", "8, V2"})
+  void testTranslateCheckpointNormalizesToV1(int writeTableVersion, InputCheckpointKind inputKind) {
+    TestableKafkaSource source = new TestableKafkaSource(propsWith(writeTableVersion), jsc, spark);
+    Option<Checkpoint> translated = source.translateCheckpoint(makeInputCheckpoint(inputKind, "k"));
+    assertV1(translated.get());
+    assertEquals("k", translated.get().getCheckpointKey());
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {6, 8})
+  void testTranslateCheckpointPreservesEmpty(int writeTableVersion) {
+    TestableKafkaSource source = new TestableKafkaSource(propsWith(writeTableVersion), jsc, spark);
+    assertTrue(source.translateCheckpoint(Option.empty()).isEmpty());
   }
 
   @Test
@@ -198,10 +273,8 @@ class TestStreamerSourceCheckpointVersion {
     String gcs = GcsEventsHoodieIncrSource.class.getName();
     assertTrue(CheckpointUtils.DATASOURCES_NOT_SUPPORTED_WITH_CKPT_V2.contains(s3));
     assertTrue(CheckpointUtils.DATASOURCES_NOT_SUPPORTED_WITH_CKPT_V2.contains(gcs));
-    assertEquals(StreamerCheckpointV1.class,
-        CheckpointUtils.buildCheckpointFromGeneralSource(s3, 8, "k").getClass());
-    assertEquals(StreamerCheckpointV1.class,
-        CheckpointUtils.buildCheckpointFromGeneralSource(gcs, 8, "k").getClass());
+    assertFalse(StreamerCheckpointUtils.shouldTargetCheckpointV2(8, s3));
+    assertFalse(StreamerCheckpointUtils.shouldTargetCheckpointV2(8, gcs));
   }
 
   private static TypedProperties propsWith(int writeTableVersion) {
@@ -210,9 +283,8 @@ class TestStreamerSourceCheckpointVersion {
     return props;
   }
 
-  private static void assertVersion(Checkpoint c, int writeTableVersion) {
-    Class<?> expected = writeTableVersion >= 8 ? StreamerCheckpointV2.class : StreamerCheckpointV1.class;
-    assertEquals(expected, c.getClass());
+  private static void assertV1(Checkpoint c) {
+    assertEquals(StreamerCheckpointV1.class, c.getClass());
   }
 
   @SuppressWarnings("unchecked")

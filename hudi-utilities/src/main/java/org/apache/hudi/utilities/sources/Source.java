@@ -23,7 +23,6 @@ import org.apache.hudi.PublicAPIClass;
 import org.apache.hudi.PublicAPIMethod;
 import org.apache.hudi.common.config.TypedProperties;
 import org.apache.hudi.common.table.checkpoint.Checkpoint;
-import org.apache.hudi.common.table.checkpoint.CheckpointUtils;
 import org.apache.hudi.common.table.checkpoint.StreamerCheckpointV1;
 import org.apache.hudi.common.table.checkpoint.StreamerCheckpointV2;
 import org.apache.hudi.common.util.ConfigUtils;
@@ -116,36 +115,22 @@ public abstract class Source<T> implements SourceCommitCallback, Serializable {
    * After the checkpoint value is decided based on the existing configurations at
    * org.apache.hudi.utilities.streamer.StreamerCheckpointUtils#resolveWhatCheckpointToResume,
    *
-   * For most of the data sources the there is no difference between checkpoint V1 and V2, it's
-   * merely changing the wrapper class.
+   * Non-incremental sources always operate on V1 checkpoints regardless of the write table version,
+   * so any V2 input read from older commit metadata is normalized to V1 here.
    *
-   * Check child class method overrides to see special case handling.
+   * Hudi incremental sources have their own V1/V2 semantics (requested time vs completion time)
+   * and override this method.
    * */
   @PublicAPIMethod(maturity = ApiMaturityLevel.EVOLVING)
   protected Option<Checkpoint> translateCheckpoint(Option<Checkpoint> lastCheckpoint) {
     if (lastCheckpoint.isEmpty()) {
       return Option.empty();
     }
-    if (CheckpointUtils.shouldTargetCheckpointV2(writeTableVersion, getClass().getName())) {
-      // V2 -> V2
-      if (lastCheckpoint.get() instanceof StreamerCheckpointV2) {
-        return lastCheckpoint;
-      }
-      // V1 -> V2
-      if (lastCheckpoint.get() instanceof StreamerCheckpointV1) {
-        StreamerCheckpointV2 newCheckpoint = new StreamerCheckpointV2(lastCheckpoint.get());
-        newCheckpoint.addV1Props();
-        return Option.of(newCheckpoint);
-      }
-    } else {
-      // V2 -> V1
-      if (lastCheckpoint.get() instanceof StreamerCheckpointV2) {
-        return Option.of(new StreamerCheckpointV1(lastCheckpoint.get()));
-      }
-      // V1 -> V1
-      if (lastCheckpoint.get() instanceof StreamerCheckpointV1) {
-        return lastCheckpoint;
-      }
+    if (lastCheckpoint.get() instanceof StreamerCheckpointV1) {
+      return lastCheckpoint;
+    }
+    if (lastCheckpoint.get() instanceof StreamerCheckpointV2) {
+      return Option.of(new StreamerCheckpointV1(lastCheckpoint.get()));
     }
     throw new UnsupportedOperationException("Unsupported checkpoint type: " + lastCheckpoint.get());
   }

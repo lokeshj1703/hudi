@@ -134,14 +134,12 @@ public abstract class KafkaSource<T> extends Source<T> {
     if (totalNewMsgs <= 0) {
       metrics.updateStreamerSourceNewMessageCount(METRIC_NAME_KAFKA_MESSAGE_IN_COUNT, 0);
       return new InputBatch<>(
-          Option.empty(),
-          createCheckpoint(writeTableVersion, KafkaOffsetGen.CheckpointUtils.offsetsToStr(offsetRanges)));
+          Option.empty(), createCheckpoint(KafkaOffsetGen.CheckpointUtils.offsetsToStr(offsetRanges)));
     }
     metrics.updateStreamerSourceNewMessageCount(METRIC_NAME_KAFKA_MESSAGE_IN_COUNT, totalNewMsgs);
     T newBatch = toBatch(offsetRanges);
     return new InputBatch<>(
-        Option.of(newBatch),
-        createCheckpoint(writeTableVersion, KafkaOffsetGen.CheckpointUtils.offsetsToStr(offsetRanges)));
+        Option.of(newBatch), createCheckpoint(KafkaOffsetGen.CheckpointUtils.offsetsToStr(offsetRanges)));
   }
 
   /**

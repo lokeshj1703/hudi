@@ -462,13 +462,8 @@ public class TestHoodieDeltaStreamer extends HoodieDeltaStreamerTestBase {
         metaClient, metaClient.getActiveTimeline().lastInstant().get());
     assertFalse(metadata.isEmpty());
     Map<String, String> extraMetadata = metadata.get().getExtraMetadata();
-    if (metaClient.getTableConfig().getTableVersion().greaterThanOrEquals(HoodieTableVersion.EIGHT)) {
-      assertTrue(extraMetadata.containsKey(STREAMER_CHECKPOINT_KEY_V2));
-      assertFalse(extraMetadata.containsKey(STREAMER_CHECKPOINT_KEY_V1));
-    } else {
-      assertFalse(extraMetadata.containsKey(STREAMER_CHECKPOINT_KEY_V2));
-      assertTrue(extraMetadata.containsKey(STREAMER_CHECKPOINT_KEY_V1));
-    }
+    assertTrue(extraMetadata.containsKey(STREAMER_CHECKPOINT_KEY_V1));
+    assertFalse(extraMetadata.containsKey(STREAMER_CHECKPOINT_KEY_V2));
   }
 
   @Test
@@ -2458,7 +2453,7 @@ public class TestHoodieDeltaStreamer extends HoodieDeltaStreamerTestBase {
     assertRecordCount(1000, downstreamTableBasePath, sqlContext);
     assertDistanceCount(1000, downstreamTableBasePath, sqlContext);
     assertDistanceCountWithExactValue(1000, downstreamTableBasePath, sqlContext);
-    TestHelpers.assertCommitMetadata(lastInstantForUpstreamTable.getCompletionTime(), downstreamTableBasePath, 1);
+    TestHelpers.assertCommitMetadataForIncrSource(lastInstantForUpstreamTable.getCompletionTime(), downstreamTableBasePath, 1);
 
     // No new data => no commits for upstream table
     cfg.sourceLimit = 0;
@@ -2476,7 +2471,7 @@ public class TestHoodieDeltaStreamer extends HoodieDeltaStreamerTestBase {
     assertRecordCount(1000, downstreamTableBasePath, sqlContext);
     assertDistanceCount(1000, downstreamTableBasePath, sqlContext);
     assertDistanceCountWithExactValue(1000, downstreamTableBasePath, sqlContext);
-    TestHelpers.assertCommitMetadata(lastInstantForUpstreamTable.getCompletionTime(), downstreamTableBasePath, 1);
+    TestHelpers.assertCommitMetadataForIncrSource(lastInstantForUpstreamTable.getCompletionTime(), downstreamTableBasePath, 1);
 
     // upsert() #1 on upstream hudi table
     cfg.sourceLimit = 2000;
@@ -2500,7 +2495,7 @@ public class TestHoodieDeltaStreamer extends HoodieDeltaStreamerTestBase {
     assertDistanceCount(2000, downstreamTableBasePath, sqlContext);
     assertDistanceCountWithExactValue(2000, downstreamTableBasePath, sqlContext);
     HoodieInstant finalInstant =
-        TestHelpers.assertCommitMetadata(lastInstantForUpstreamTable.getCompletionTime(), downstreamTableBasePath, 2);
+        TestHelpers.assertCommitMetadataForIncrSource(lastInstantForUpstreamTable.getCompletionTime(), downstreamTableBasePath, 2);
     counts = countsPerCommit(downstreamTableBasePath, sqlContext);
     assertEquals(2000, counts.stream().mapToLong(entry -> entry.getLong(1)).sum());
 
@@ -3315,9 +3310,7 @@ public class TestHoodieDeltaStreamer extends HoodieDeltaStreamerTestBase {
       }
       HoodieInstant lastInstant = timeline.lastInstant().get();
       HoodieCommitMetadata commitMetadata = timeline.readCommitMetadata(lastInstant);
-      return meta.getTableConfig().getTableVersion().greaterThanOrEquals(HoodieTableVersion.EIGHT)
-          ? commitMetadata.getMetadata(STREAMER_CHECKPOINT_KEY_V2)
-          : commitMetadata.getMetadata(HoodieStreamer.CHECKPOINT_KEY);
+      return commitMetadata.getMetadata(HoodieStreamer.CHECKPOINT_KEY);
     }
 
     private String getLatestCommitInstantTime(String tableBasePath) {

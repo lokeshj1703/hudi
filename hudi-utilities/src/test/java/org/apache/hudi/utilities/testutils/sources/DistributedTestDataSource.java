@@ -61,7 +61,7 @@ public class DistributedTestDataSource extends AbstractBaseTestSource {
 
     // No new data.
     if (sourceLimit <= 0) {
-      return new InputBatch<>(Option.empty(), createCheckpoint(writeTableVersion, instantTime));
+      return new InputBatch<>(Option.empty(), createCheckpoint(instantTime));
     }
 
     TypedProperties newProps = new TypedProperties();
@@ -81,6 +81,6 @@ public class DistributedTestDataSource extends AbstractBaseTestSource {
               }
               return fetchNextBatch(newProps, perPartitionSourceLimit, instantTime, p).iterator();
             }, true);
-    return new InputBatch<>(Option.of(avroRDD), createCheckpoint(writeTableVersion, instantTime));
+    return new InputBatch<>(Option.of(avroRDD), createCheckpoint(instantTime));
   }
 }

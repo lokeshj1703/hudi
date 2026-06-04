@@ -56,6 +56,6 @@ public class RandomJsonSource extends JsonSource {
     String commitTime = TimelineUtils.generateInstantTime(true, timeGenerator);
     List<String> inserts = dataGen.convertToStringList(dataGen.generateInserts(commitTime, 20));
 
-    return new InputBatch<>(Option.of(sparkContext.parallelize(inserts, 1)), createCheckpoint(writeTableVersion, commitTime));
+    return new InputBatch<>(Option.of(sparkContext.parallelize(inserts, 1)), createCheckpoint(commitTime));
   }
 }

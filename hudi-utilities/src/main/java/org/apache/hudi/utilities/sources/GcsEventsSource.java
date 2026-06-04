@@ -155,7 +155,7 @@ public class GcsEventsSource extends RowSource {
 
     if (messageBatch.isEmpty()) {
       LOG.info("No new data. Returning empty batch with checkpoint value: " + CHECKPOINT_VALUE_ZERO);
-      return Pair.of(Option.empty(), createCheckpoint(writeTableVersion, CHECKPOINT_VALUE_ZERO));
+      return Pair.of(Option.empty(), createCheckpoint(CHECKPOINT_VALUE_ZERO));
     }
 
     int numPartitions = (int) Math.ceil(
@@ -167,12 +167,10 @@ public class GcsEventsSource extends RowSource {
     StructType sourceSchema = UtilHelpers.getSourceSchema(schemaProvider);
     if (sourceSchema != null) {
       return Pair.of(
-          Option.of(sparkSession.read().schema(sourceSchema).json(eventRecords)),
-          createCheckpoint(writeTableVersion, CHECKPOINT_VALUE_ZERO));
+          Option.of(sparkSession.read().schema(sourceSchema).json(eventRecords)), createCheckpoint(CHECKPOINT_VALUE_ZERO));
     } else {
       return Pair.of(
-          Option.of(sparkSession.read().json(eventRecords)),
-          createCheckpoint(writeTableVersion, CHECKPOINT_VALUE_ZERO));
+          Option.of(sparkSession.read().json(eventRecords)), createCheckpoint(CHECKPOINT_VALUE_ZERO));
     }
   }
 

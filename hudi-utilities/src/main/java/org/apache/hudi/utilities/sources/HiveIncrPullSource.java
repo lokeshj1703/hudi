@@ -106,13 +106,13 @@ public class HiveIncrPullSource extends AvroSource {
 
     if (!latestTargetCommit.isPresent()) {
       // start from the beginning
-      return Option.of(createCheckpoint(writeTableVersion, commitTimes.get(0)));
+      return Option.of(createCheckpoint(commitTimes.get(0)));
     }
 
     for (String instantTime : commitTimes) {
       // TODO(vc): Add an option to delete consumed commits
       if (instantTime.compareTo(latestTargetCommit.get().getCheckpointKey()) > 0) {
-        return Option.of(createCheckpoint(writeTableVersion, instantTime));
+        return Option.of(createCheckpoint(instantTime));
       }
     }
     return Option.empty();
@@ -125,7 +125,8 @@ public class HiveIncrPullSource extends AvroSource {
       Option<Checkpoint> commitToPull = findCommitToPull(lastCheckpoint);
 
       if (!commitToPull.isPresent()) {
-        return new InputBatch<>(Option.empty(), lastCheckpoint.isPresent() ? lastCheckpoint.get() : createCheckpoint(writeTableVersion, ""));
+        return new InputBatch<>(Option.empty(),
+            lastCheckpoint.isPresent() ? createCheckpoint(lastCheckpoint.get()) : createCheckpoint(""));
       }
 
       // read the files out.
@@ -135,7 +136,7 @@ public class HiveIncrPullSource extends AvroSource {
           AvroKey.class, NullWritable.class, sparkContext.hadoopConfiguration());
       sparkContext.setJobGroup(this.getClass().getSimpleName(), "Fetch new data");
       return new InputBatch<>(Option.of(avroRDD.keys().map(r -> ((GenericRecord) r.datum()))),
-          createCheckpoint(writeTableVersion, String.valueOf(commitToPull.get())));
+          createCheckpoint(String.valueOf(commitToPull.get())));
     } catch (Exception e) {
       throw new HoodieReadFromSourceException("Unable to read from source from checkpoint: " + lastCheckpoint, e);
     }

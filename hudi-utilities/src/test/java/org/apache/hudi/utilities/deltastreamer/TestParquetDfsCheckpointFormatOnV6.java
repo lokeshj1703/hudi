@@ -53,7 +53,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>Expected: the next commit's {@code extraMetadata} carries the V1 key
  * {@code deltastreamer.checkpoint.key} and NOT the V2 key {@code streamer.checkpoint.key.v2},
- * because {@link org.apache.hudi.common.table.checkpoint.CheckpointUtils#shouldTargetCheckpointV2}
+ * because {@link org.apache.hudi.utilities.streamer.StreamerCheckpointUtils#shouldTargetCheckpointV2}
  * returns false for {@code writeTableVersion < 8}.
  *
  * <p>If a V2 key shows up on the resumed commit, that reproduces the bug reported against
@@ -115,7 +115,7 @@ public class TestParquetDfsCheckpointFormatOnV6 extends HoodieDeltaStreamerTestB
 
     HoodieCommitMetadata resumedCommit = readLatestCommitMetadata(tableBasePath);
     // The actual test: under hoodie.write.table.version=6, ParquetDFSSource must keep emitting V1
-    // keys (CheckpointUtils.shouldTargetCheckpointV2 returns false for writeTableVersion < 8).
+    // keys (StreamerCheckpointUtils.shouldTargetCheckpointV2 returns false for writeTableVersion < 8).
     assertNotNull(resumedCommit.getMetadata(StreamerCheckpointV1.STREAMER_CHECKPOINT_KEY_V1),
         "Resumed v6 commit must persist V1 checkpoint key. extraMetadata="
             + resumedCommit.getExtraMetadata());

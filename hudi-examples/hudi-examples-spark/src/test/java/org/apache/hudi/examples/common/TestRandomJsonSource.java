@@ -20,7 +20,6 @@ package org.apache.hudi.examples.common;
 
 import org.apache.hudi.common.config.TypedProperties;
 import org.apache.hudi.common.table.checkpoint.StreamerCheckpointV1;
-import org.apache.hudi.common.table.checkpoint.StreamerCheckpointV2;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.utilities.sources.InputBatch;
 
@@ -72,7 +71,6 @@ class TestRandomJsonSource {
     assertNotNull(batch.getBatch());
     assertEquals(20, batch.getBatch().get().count());
     assertNotNull(batch.getCheckpointForNextBatch());
-    Class<?> expectedCheckpointClass = writeTableVersion >= 8 ? StreamerCheckpointV2.class : StreamerCheckpointV1.class;
-    assertEquals(expectedCheckpointClass, batch.getCheckpointForNextBatch().getClass());
+    assertEquals(StreamerCheckpointV1.class, batch.getCheckpointForNextBatch().getClass());
   }
 }

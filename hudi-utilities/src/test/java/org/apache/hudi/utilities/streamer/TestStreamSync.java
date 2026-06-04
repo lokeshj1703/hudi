@@ -357,11 +357,33 @@ public class TestStreamSync extends SparkClientFunctionalTestHarness {
   }
 
   @Test
-  public void testExtractCheckpointMetadata_WhenCheckpointIsNullV2() {
+  void testExtractCheckpointMetadata_WhenCheckpointIsNullNonIncrementalSourceOnV8UsesV1() {
     StreamSync streamSync = setupStreamSync();
     HoodieStreamer.Config cfg = new HoodieStreamer.Config();
     cfg.checkpoint = "test-checkpoint";
     cfg.ignoreCheckpoint = "test-ignore";
+    cfg.sourceClassName = "org.apache.hudi.utilities.sources.KafkaSource";
+    TypedProperties props = new TypedProperties();
+
+    InputBatch inputBatch = mock(InputBatch.class);
+    when(inputBatch.getCheckpointForNextBatch()).thenReturn(null);
+
+    Map<String, String> result = streamSync.extractCheckpointMetadata(
+        inputBatch, props, HoodieTableVersion.EIGHT.versionCode(), cfg);
+
+    Map<String, String> expected = new HashMap<>();
+    expected.put(CHECKPOINT_IGNORE_KEY, "test-ignore");
+    expected.put(CHECKPOINT_RESET_KEY, "test-checkpoint");
+    assertEquals(expected, result, "Should fall back to V1 keys for non-incremental sources on v8");
+  }
+
+  @Test
+  void testExtractCheckpointMetadata_WhenCheckpointIsNullIncrementalSourceOnV8UsesV2() {
+    StreamSync streamSync = setupStreamSync();
+    HoodieStreamer.Config cfg = new HoodieStreamer.Config();
+    cfg.checkpoint = "test-checkpoint";
+    cfg.ignoreCheckpoint = "test-ignore";
+    cfg.sourceClassName = "org.apache.hudi.utilities.sources.HoodieIncrSource";
     TypedProperties props = new TypedProperties();
 
     InputBatch inputBatch = mock(InputBatch.class);
@@ -373,7 +395,7 @@ public class TestStreamSync extends SparkClientFunctionalTestHarness {
     Map<String, String> expected = new HashMap<>();
     expected.put(CHECKPOINT_IGNORE_KEY, "test-ignore");
     expected.put(STREAMER_CHECKPOINT_RESET_KEY_V2, "test-checkpoint");
-    assertEquals(expected, result, "Should return default metadata when checkpoint is null");
+    assertEquals(expected, result, "Should fall back to V2 keys for incremental sources on v8");
   }
 
   @Test

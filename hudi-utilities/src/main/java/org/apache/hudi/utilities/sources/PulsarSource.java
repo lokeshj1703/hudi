@@ -132,7 +132,7 @@ public class PulsarSource extends RowSource implements Closeable {
         .option("endingOffsets", endingOffsetStr)
         .load();
 
-    return Pair.of(Option.of(transform(sourceRows)), createCheckpoint(writeTableVersion, endingOffsetStr));
+    return Pair.of(Option.of(transform(sourceRows)), createCheckpoint(endingOffsetStr));
   }
 
   @Override

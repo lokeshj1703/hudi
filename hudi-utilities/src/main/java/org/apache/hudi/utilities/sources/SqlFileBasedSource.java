@@ -94,8 +94,7 @@ public class SqlFileBasedSource extends RowSource {
           rows = sparkSession.sql(sqlStr);
         }
       }
-      return Pair.of(Option.of(rows),
-          shouldEmitCheckPoint ? createCheckpoint(writeTableVersion, String.valueOf(System.currentTimeMillis())) : null);
+      return Pair.of(Option.of(rows), shouldEmitCheckPoint ? createCheckpoint(String.valueOf(System.currentTimeMillis())) : null);
     } catch (IOException ioe) {
       throw new HoodieIOException("Error reading source SQL file.", ioe);
     }

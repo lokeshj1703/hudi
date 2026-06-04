@@ -106,14 +106,13 @@ public class DFSTestSuitePathSelector extends DFSPathSelector {
       // no data to readAvro
       if (eligibleFiles.size() == 0) {
         return new ImmutablePair<>(Option.empty(),
-            lastCheckpoint.orElseGet(() -> createCheckpoint(writeTableVersion, String.valueOf(Long.MIN_VALUE))));
+            lastCheckpoint.orElseGet(() -> createCheckpoint(String.valueOf(Long.MIN_VALUE))));
       }
       // readAvro the files out.
       String pathStr = eligibleFiles.stream().map(f -> f.getPath().toString())
           .collect(Collectors.joining(","));
 
-      return new ImmutablePair<>(Option.ofNullable(pathStr),
-          createCheckpoint(writeTableVersion, String.valueOf(nextBatchId)));
+      return new ImmutablePair<>(Option.ofNullable(pathStr), createCheckpoint(String.valueOf(nextBatchId)));
     } catch (IOException ioe) {
       throw new HoodieIOException(
           "Unable to readAvro from source from checkpoint: " + lastCheckpoint, ioe);

@@ -264,12 +264,12 @@ public class JdbcSource extends RowSource {
         final String max = rowDataset.agg(functions.max(incrementalColumn).cast(DataTypes.StringType)).first().getString(0);
         LOG.info("Checkpointing column {} with value: {}", incrementalColumn, max);
         if (max != null) {
-          return createCheckpoint(writeTableVersion, max);
+          return createCheckpoint(max);
         }
         return lastCheckpoint.isPresent() && !StringUtils.isNullOrEmpty(lastCheckpoint.get().getCheckpointKey())
-            ? lastCheckpoint.get() : createCheckpoint(writeTableVersion, StringUtils.EMPTY_STRING);
+            ? createCheckpoint(lastCheckpoint.get()) : createCheckpoint(StringUtils.EMPTY_STRING);
       } else {
-        return createCheckpoint(writeTableVersion, StringUtils.EMPTY_STRING);
+        return createCheckpoint(StringUtils.EMPTY_STRING);
       }
     } catch (Exception e) {
       LOG.error("Failed to checkpoint");

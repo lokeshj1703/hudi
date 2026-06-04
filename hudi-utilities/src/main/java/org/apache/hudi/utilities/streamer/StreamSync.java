@@ -54,6 +54,7 @@ import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.HoodieTableVersion;
 import org.apache.hudi.common.table.TableSchemaResolver;
 import org.apache.hudi.common.table.checkpoint.Checkpoint;
+import org.apache.hudi.common.table.checkpoint.StreamerCheckpointV2;
 import org.apache.hudi.common.table.log.block.HoodieLogBlock;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
@@ -150,8 +151,9 @@ import static org.apache.hudi.avro.AvroSchemaUtils.getAvroRecordQualifiedName;
 import static org.apache.hudi.common.table.HoodieTableConfig.HIVE_STYLE_PARTITIONING_ENABLE;
 import static org.apache.hudi.common.table.HoodieTableConfig.TIMELINE_HISTORY_PATH;
 import static org.apache.hudi.common.table.HoodieTableConfig.URL_ENCODE_PARTITIONING;
-import static org.apache.hudi.common.table.checkpoint.CheckpointUtils.buildCheckpointFromGeneralSource;
+import static org.apache.hudi.common.table.checkpoint.CheckpointUtils.createCheckpoint;
 import static org.apache.hudi.common.util.ConfigUtils.getBooleanWithAltKeys;
+import static org.apache.hudi.utilities.streamer.StreamerCheckpointUtils.shouldTargetCheckpointV2;
 import static org.apache.hudi.config.HoodieClusteringConfig.ASYNC_CLUSTERING_ENABLE;
 import static org.apache.hudi.config.HoodieClusteringConfig.INLINE_CLUSTERING;
 import static org.apache.hudi.config.HoodieCompactionConfig.INLINE_COMPACT;
@@ -922,8 +924,9 @@ public class StreamSync implements Serializable, Closeable {
           .getCheckpointCommitMetadata(cfg.checkpoint, cfg.ignoreCheckpoint);
     }
 
-    // Otherwise create new checkpoint based on version
-    Checkpoint checkpoint = buildCheckpointFromGeneralSource(cfg.sourceClassName, versionCode, null);
+    // Only HoodieIncrSource on v8+ writes V2 cursor; everything else emits V1.
+    Checkpoint checkpoint = shouldTargetCheckpointV2(versionCode, cfg.sourceClassName)
+        ? new StreamerCheckpointV2((String) null) : createCheckpoint((String) null);
 
     return checkpoint.getCheckpointCommitMetadata(cfg.checkpoint, cfg.ignoreCheckpoint);
   }
