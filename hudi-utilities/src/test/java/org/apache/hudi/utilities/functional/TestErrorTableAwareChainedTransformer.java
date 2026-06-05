@@ -21,7 +21,6 @@ package org.apache.hudi.utilities.functional;
 
 import org.apache.hudi.common.config.TypedProperties;
 import org.apache.hudi.common.util.Option;
-import org.apache.hudi.exception.HoodieValidationException;
 import org.apache.hudi.testutils.SparkClientFunctionalTestHarness;
 import org.apache.hudi.utilities.exception.HoodieTransformException;
 import org.apache.hudi.utilities.transform.ErrorTableAwareChainedTransformer;
@@ -76,17 +75,45 @@ public class TestErrorTableAwareChainedTransformer extends SparkClientFunctional
   }
 
   @Test
-  public void testForErrorRecordColumn() {
+  public void testCorruptRecordColumnReInjectedAfterTransformerDropsIt() {
+    // Regression for ENG-41958: a custom transformer (e.g. ColumnFilter with mode=include)
+    // that does dataset.select(userColumns) drops _corrupt_record. The chain should
+    // re-inject it after each transformer rather than failing validation.
     Dataset<Row> original = getTestDataset();
 
     Transformer t1 = getErrorEventHandlerTransformer();
-    Transformer t2 = getErrorRecordColumnDropTransformer();
+    Transformer t2 = getErrorRecordColumnDropTransformer(); // simulates ColumnFilter with mode=include
     Transformer t3 = (jsc, sparkSession, dataset, properties) -> dataset.withColumn("foo",
         dataset.col("foo").cast(IntegerType));
     TypedProperties properties = new TypedProperties();
     properties.setProperty(ERROR_TABLE_ENABLED.key(), "true");
     ErrorTableAwareChainedTransformer transformer = new ErrorTableAwareChainedTransformer(Arrays.asList(t1, t2, t3));
-    assertThrows(HoodieValidationException.class, () -> transformer.apply(jsc(), spark(), original, properties));
+    Dataset<Row> transformed = transformer.apply(jsc(), spark(), original, properties);
+
+    // _corrupt_record should survive the chain even though t2 dropped it
+    assertArrayEquals(new String[]{"foo", ERROR_TABLE_CURRUPT_RECORD_COL_NAME}, transformed.columns());
+    assertEquals(2, transformed.count());
+  }
+
+  @Test
+  public void testCustomColumnProjectionTransformerPreservesCorruptRecord() {
+    // Simulates a custom JAR transformer that selects specific columns (like Cardlytics
+    // ColumnFilter with mode=include), dropping _corrupt_record in the process.
+    Dataset<Row> original = getTestDataset();
+
+    // Transformer that only selects "foo" — drops _corrupt_record
+    Transformer columnProjectionTransformer = (jsc, sparkSession, dataset, props) -> dataset.select("foo");
+    TypedProperties properties = new TypedProperties();
+    properties.setProperty(ERROR_TABLE_ENABLED.key(), "true");
+
+    ErrorTableAwareChainedTransformer transformer =
+        new ErrorTableAwareChainedTransformer(Arrays.asList(columnProjectionTransformer));
+    Dataset<Row> transformed = transformer.apply(jsc(), spark(), original, properties);
+
+    assertArrayEquals(new String[]{"foo", ERROR_TABLE_CURRUPT_RECORD_COL_NAME}, transformed.columns());
+    assertEquals(2, transformed.count());
+    // re-injected value should be null
+    assertEquals(2, transformed.filter(new Column(ERROR_TABLE_CURRUPT_RECORD_COL_NAME).isNull()).count());
   }
 
   private Dataset<Row> getTestDataset() {
