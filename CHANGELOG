@@ -3001,3 +3001,8 @@ Duplicate switch branch in HoodieInputFormatUtils (#9438)
 [ENG-42070][CHERRYPICK] fix(common): normalize hudi table base path in implicit-key lock providers (#1883)
 [ENG-42105][CHERRYPICK] perf(streamer): fold validate() error-table WriteStatus sums into one pass (#1897)
 [AUDIT-2425]: Changelog for release-v2.2.0 (#1864)
+
+--- [2026-06-04 23:19:54] [release-v2.4.0] ---
+[ENG-42664] fix(streamer): Use checkpoint V1 for non-incremental streamer sources (#1917)
+[ENG-40391][INTERNAL] Add upgrade tests for index and payloads (#1862)
+[AUDIT-5694]: Changelog for release-v2.3.0 (#1913)
