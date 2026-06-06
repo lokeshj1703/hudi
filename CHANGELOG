@@ -1295,3 +1295,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-06-03 17:40:27] [release-v1.244.0] ---
 [ENG-42408] [MINOR] fix: strip Hudi meta fields from schema persisted in commit extraMetadata (#1901)
 [AUDIT-1071]: Changelog for release-v1.243.0 (#1914)
+
+--- [2026-06-06 16:25:13] [release-v1.245.0] ---
+[ENG-41958] fix(utilities): Re-inject _corrupt_record in ErrorTableAwareChainedTransformer after each transformer (#1916)
+[AUDIT-1071]: Changelog for release-v1.244.0 (#1918)
