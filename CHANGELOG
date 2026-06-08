@@ -3006,3 +3006,8 @@ Duplicate switch branch in HoodieInputFormatUtils (#9438)
 [ENG-42664] fix(streamer): Use checkpoint V1 for non-incremental streamer sources (#1917)
 [ENG-40391][INTERNAL] Add upgrade tests for index and payloads (#1862)
 [AUDIT-5694]: Changelog for release-v2.3.0 (#1913)
+
+--- [2026-06-08 12:46:23] [release-v2.5.0] ---
+[AUDIT-5694]: Upgrade actions in release workflow for better JDK download reliability (#1928)
+[AUDIT-5694][CHERRYPICK] Add input records caching to HoodieGlobalSimpleIndex (#1927)
+[AUDIT-1071]: Changelog for release-v2.4.0 (#1921)
