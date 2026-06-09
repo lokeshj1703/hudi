@@ -689,10 +689,10 @@ public class HoodieAvroUtils {
       }
     }
 
-    Schema projectedSchema = Schema.createRecord(originalSchema.getName(), originalSchema.getDoc(),
-        originalSchema.getNamespace(), originalSchema.isError());
-    projectedSchema.setFields(projectedFields);
-    return projectedSchema;
+    // Route through createNewSchemaFromFieldsWithReference (like removeFields / appendFieldsToSchema /
+    // makeFieldNonNull) so schema-level object props (e.g. Onehouse "hudi_id_tracking" field-id history)
+    // are carried over. A bare Schema.createRecord + setFields would drop them.
+    return createNewSchemaFromFieldsWithReference(originalSchema, projectedFields);
   }
 
   /**

@@ -731,6 +731,18 @@ public class TestHoodieAvroUtils {
   }
 
   @Test
+  public void testGenerateProjectionSchemaPreservesSchemaLevelProps() {
+    // Schema-level object props (e.g. Onehouse "hudi_id_tracking" field-id history) must survive
+    // generateProjectionSchema, matching removeFields / appendFieldsToSchema / makeFieldNonNull which
+    // already route through createNewSchemaFromFieldsWithReference.
+    Schema source = new Schema.Parser().parse(EXAMPLE_SCHEMA);
+    source.addProp("hudi_id_tracking", "{\"bar\":2}");
+    Schema projected = HoodieAvroUtils.generateProjectionSchema(source, Arrays.asList("_row_key", "non_pii_col"));
+    assertEquals("{\"bar\":2}", projected.getObjectProp("hudi_id_tracking"));
+    assertEquals(2, projected.getFields().size());
+  }
+
+  @Test
   public void testWrapAndUnwrapAvroValues() throws IOException {
     Schema schema = new Schema.Parser().parse(SCHEMA_WITH_AVRO_TYPES_STR);
     GenericRecord record = new GenericData.Record(schema);
