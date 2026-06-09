@@ -356,12 +356,42 @@ public class HoodieAvroUtils {
   }
 
   public static Schema removeFields(Schema schema, Set<String> fieldsToRemove) {
+    // Fast path: if no top-level field in `schema` is one to be removed, skip the rebuild entirely.
+    // The hot caller is CommitUtils.sanitizeSchemaForCommitMetadata, which runs on every commit and is
+    // almost always a no-op (write config schemas are clean by convention). Schema.getField is an O(1)
+    // HashMap lookup. Guarded on !isError to preserve the existing behavior of forcing isError=false on
+    // the rebuilt record.
+    //
+    // Asymmetry note: the rebuild path below uses the 4-arg Schema.Field constructor, which strips
+    // field-level object props (pre-existing behavior). The fast path returns the input as-is, so
+    // field-level props are preserved when the call is a no-op. No production caller relies on the
+    // stripping behavior; if that ever changes, mirror addMetadataFields's per-field prop copy in the
+    // rebuild path to make both paths consistent.
+    if (!schema.isError()) {
+      boolean anyFieldPresent = false;
+      for (String fieldName : fieldsToRemove) {
+        if (schema.getField(fieldName) != null) {
+          anyFieldPresent = true;
+          break;
+        }
+      }
+      if (!anyFieldPresent) {
+        return schema;
+      }
+    }
     List<Schema.Field> filteredFields = schema.getFields()
         .stream()
         .filter(field -> !fieldsToRemove.contains(field.name()))
         .map(field -> new Schema.Field(field.name(), field.schema(), field.doc(), field.defaultVal()))
         .collect(Collectors.toList());
     Schema filteredSchema = Schema.createRecord(schema.getName(), schema.getDoc(), schema.getNamespace(), false);
+    // Preserve schema-level object props (e.g. Onehouse "hudi_id_tracking" field-id history). The result of
+    // removeMetadataFields is persisted under HoodieCommitMetadata.SCHEMA_KEY via
+    // CommitUtils.sanitizeSchemaForCommitMetadata and read back by TableSchemaResolver, so dropping these
+    // here silently loses that metadata. Mirrors addMetadataFields, which already carries props through.
+    for (Map.Entry<String, Object> prop : schema.getObjectProps().entrySet()) {
+      filteredSchema.addProp(prop.getKey(), prop.getValue());
+    }
     filteredSchema.setFields(filteredFields);
     return filteredSchema;
   }
@@ -383,6 +413,10 @@ public class HoodieAvroUtils {
         })
         .collect(Collectors.toList());
     Schema withNonNullField = Schema.createRecord(schema.getName(), schema.getDoc(), schema.getNamespace(), false);
+    // Preserve schema-level object props for parity with removeFields / addMetadataFields. See PR #1930.
+    for (Map.Entry<String, Object> prop : schema.getObjectProps().entrySet()) {
+      withNonNullField.addProp(prop.getKey(), prop.getValue());
+    }
     withNonNullField.setFields(filteredFields);
     return withNonNullField;
   }
@@ -591,6 +625,10 @@ public class HoodieAvroUtils {
 
     Schema projectedSchema = Schema.createRecord(originalSchema.getName(), originalSchema.getDoc(),
         originalSchema.getNamespace(), originalSchema.isError());
+    // Preserve schema-level object props for parity with removeFields / addMetadataFields. See PR #1930.
+    for (Map.Entry<String, Object> prop : originalSchema.getObjectProps().entrySet()) {
+      projectedSchema.addProp(prop.getKey(), prop.getValue());
+    }
     projectedSchema.setFields(projectedFields);
     return projectedSchema;
   }

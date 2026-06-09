@@ -28,6 +28,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Collections;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -256,4 +257,17 @@ public class TestAvroSchemaUtils {
         () -> AvroSchemaUtils.checkSchemaCompatible(FULL_SCHEMA, BROKEN_SCHEMA, true, false, Collections.emptySet()));
   }
 
+  @Test
+  public void testAppendFieldsToSchemaPreservesSchemaLevelProps() {
+    // Schema-level object props (e.g. Onehouse "hudi_id_tracking", which records field-id history) must survive
+    // appendFieldsToSchema. This is reached on the TableSchemaResolver read path via appendPartitionColumns when
+    // drop_partition_columns=true, so dropping these here silently strips the prop from getTableAvroSchema().
+    Schema source = new Schema.Parser().parse(SOURCE_SCHEMA);
+    source.addProp("hudi_id_tracking", "{\"foo\":1}");
+    Schema.Field extra = new Schema.Field(
+        "added_partition_col", Schema.create(Schema.Type.STRING), "", (Object) null);
+    Schema result = AvroSchemaUtils.appendFieldsToSchema(source, Collections.singletonList(extra));
+    assertEquals("{\"foo\":1}", result.getObjectProp("hudi_id_tracking"));
+    assertEquals(source.getFields().size() + 1, result.getFields().size());
+  }
 }

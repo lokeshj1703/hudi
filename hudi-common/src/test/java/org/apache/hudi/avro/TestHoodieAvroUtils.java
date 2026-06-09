@@ -89,6 +89,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -309,6 +310,64 @@ public class TestHoodieAvroUtils {
   }
 
   @Test
+  public void testRemoveMetadataFieldsPreservesSchemaLevelProps() {
+    // Schema-level object props (e.g. Onehouse "hudi_id_tracking", which records field-id history)
+    // must survive removeMetadataFields, since that result is persisted under
+    // HoodieCommitMetadata.SCHEMA_KEY via CommitUtils.sanitizeSchemaForCommitMetadata and later
+    // read back by TableSchemaResolver. Dropping the prop here silently loses the field-id mapping.
+    Schema schemaWithMetaCols = HoodieAvroUtils.addMetadataFields(new Schema.Parser().parse(EXAMPLE_SCHEMA));
+    schemaWithMetaCols.addProp("hudi_id_tracking", "{\"foo\":1}");
+    Schema schemaWithoutMetaCols = HoodieAvroUtils.removeMetadataFields(schemaWithMetaCols);
+    assertNotNull(schemaWithoutMetaCols.getObjectProp("hudi_id_tracking"),
+        "removeMetadataFields must preserve schema-level object props");
+    assertEquals("{\"foo\":1}", schemaWithoutMetaCols.getObjectProp("hudi_id_tracking"));
+  }
+
+  @Test
+  public void testGenerateProjectionSchemaPreservesSchemaLevelProps() {
+    // Parity with removeFields: callers of generateProjectionSchema (bootstrap, parquet read filter) don't
+    // currently persist the projected schema, but the rebuild pattern is identical to the removeFields bug
+    // fixed in PR #1930 — guard against future regressions if a caller routes the output into SCHEMA_KEY.
+    Schema source = new Schema.Parser().parse(EXAMPLE_SCHEMA);
+    source.addProp("hudi_id_tracking", "{\"bar\":2}");
+    Schema projected = HoodieAvroUtils.generateProjectionSchema(source, Arrays.asList("_row_key", "non_pii_col"));
+    assertEquals("{\"bar\":2}", projected.getObjectProp("hudi_id_tracking"));
+    assertEquals(2, projected.getFields().size());
+  }
+
+  @Test
+  public void testRemoveFieldsFastPathReturnsSameInstanceWhenNoMetaFieldsPresent() {
+    // The hot caller (CommitUtils.sanitizeSchemaForCommitMetadata) almost always passes a clean schema.
+    // removeFields should short-circuit and return the input instance — no rebuild, no per-commit allocations.
+    Schema cleanSchema = new Schema.Parser().parse(EXAMPLE_SCHEMA);
+    Schema result = HoodieAvroUtils.removeMetadataFields(cleanSchema);
+    assertSame(cleanSchema, result, "removeMetadataFields must short-circuit when no meta fields are present");
+  }
+
+  @Test
+  public void testRemoveFieldsErrorSchemaSkipsFastPathAndRebuilds() {
+    // The fast path is guarded on !schema.isError(); an error schema must skip the short-circuit and go
+    // through the rebuild (which also normalizes isError to false). Covers the isError()==true branch.
+    Schema errorSchema = Schema.createRecord("errrec", "", "", true);
+    errorSchema.setFields(Arrays.asList(
+        new Schema.Field(HoodieRecord.COMMIT_TIME_METADATA_FIELD, Schema.create(Schema.Type.STRING), "", (Object) null),
+        new Schema.Field("_row_key", Schema.create(Schema.Type.STRING), "", (Object) null)));
+    Schema result = HoodieAvroUtils.removeMetadataFields(errorSchema);
+    assertNull(result.getField(HoodieRecord.COMMIT_TIME_METADATA_FIELD));
+    assertNotNull(result.getField("_row_key"));
+    assertFalse(result.isError(), "rebuild path normalizes isError to false");
+  }
+
+  @Test
+  public void testMakeFieldNonNullPreservesSchemaLevelProps() {
+    // Parity with removeFields. Currently only exercised by a unit test, but a public API — fix proactively.
+    Schema source = new Schema.Parser().parse(EXAMPLE_SCHEMA);
+    source.addProp("hudi_id_tracking", "{\"baz\":3}");
+    Schema result = HoodieAvroUtils.makeFieldNonNull(source, "_row_key", "default_key");
+    assertEquals("{\"baz\":3}", result.getObjectProp("hudi_id_tracking"));
+  }
+
+  @Test
   public void testRemoveFields() {
     // partitioned table test.
     String schemaStr = "{\"type\": \"record\",\"name\": \"testrec\",\"fields\": [ "
@@ -332,12 +391,12 @@ public class TestHoodieAvroUtils {
     }
     assertEquals(expectedSchema, rec1.getSchema());
 
-    // non-partitioned table test with empty list of fields.
-    schemaStr = "{\"type\": \"record\",\"name\": \"testrec\",\"fields\": [ "
-        + "{\"name\": \"timestamp\",\"type\": \"double\"},{\"name\": \"_row_key\", \"type\": \"string\"},"
-        + "{\"name\": \"non_pii_col\", \"type\": \"string\"},"
-        + "{\"name\": \"pii_col\", \"type\": \"string\"}]}";
-    expectedSchema = new Schema.Parser().parse(schemaStr);
+    // non-partitioned table test with empty list of fields. When no requested field exists in the
+    // schema, removeFields short-circuits and returns the input schema as-is — including any field-level
+    // object props (e.g. EXAMPLE_SCHEMA's "column_category" on pii_col). The rebuild path strips field-level
+    // props (pre-existing behavior of the 4-arg Schema.Field constructor); the fast path doesn't, so the
+    // two paths differ here. Acceptable for now since no caller relies on the stripping behavior.
+    expectedSchema = new Schema.Parser().parse(EXAMPLE_SCHEMA);
     rec1 = HoodieAvroUtils.removeFields(rec, Collections.singleton(""));
     assertEquals(expectedSchema, rec1.getSchema());
   }

@@ -200,6 +200,66 @@ public class TestSparkSortAndSizeClustering extends HoodieSparkClientTestHarness
     assertSchemaHasNoMetaFields(replaceMetadata, "replace (clustering) commit");
   }
 
+  /**
+   * A schema-level object property set on the write schema (e.g. the Onehouse "hudi_id_tracking"
+   * field-id history prop) must survive into the schema persisted under
+   * {@link HoodieCommitMetadata#SCHEMA_KEY} for both ingestion and clustering (replace) commits.
+   * {@code CommitUtils.sanitizeSchemaForCommitMetadata} strips Hudi meta fields via
+   * {@code HoodieAvroUtils.removeMetadataFields}; that strip rebuilds the record schema and must
+   * NOT drop schema-level object props. Guards the fix in {@code HoodieAvroUtils.removeFields}.
+   */
+  @Test
+  public void testReplaceCommitPreservesSchemaLevelProps() throws Exception {
+    setup(102400);
+    config.setValue("hoodie.datasource.write.row.writer.enable", "false");
+    config.setValue("hoodie.metadata.enable", "false");
+    config.setValue("hoodie.clustering.plan.strategy.daybased.lookback.partitions", "1");
+    config.setValue("hoodie.clustering.plan.strategy.target.file.max.bytes", String.valueOf(1024 * 1024));
+    config.setValue("hoodie.clustering.plan.strategy.max.bytes.per.group", String.valueOf(2 * 1024 * 1024));
+
+    // Set a schema-level object prop on the write schema (mirrors Onehouse "hudi_id_tracking").
+    Schema schemaWithProp = new Schema.Parser().parse(HoodieTestDataGenerator.TRIP_EXAMPLE_SCHEMA);
+    schemaWithProp.addProp("hudi_id_tracking", "{\"foo\":1}");
+    config.setSchema(schemaWithProp.toString());
+
+    int numRecords = 1000;
+    String ingestionTime = HoodieActiveTimeline.createNewInstantTime();
+    writeData(ingestionTime, numRecords, true);
+
+    metaClient = HoodieTableMetaClient.reload(metaClient);
+    HoodieInstant ingestionInstant = metaClient.getActiveTimeline()
+        .getCommitsTimeline()
+        .filterCompletedInstants()
+        .filter(i -> i.getTimestamp().equals(ingestionTime))
+        .firstInstant()
+        .orElseThrow(() -> new AssertionError("No completed ingestion commit found for " + ingestionTime));
+    HoodieCommitMetadata ingestionMetadata = metaClient.getActiveTimeline()
+        .deserializeInstantContent(ingestionInstant, HoodieCommitMetadata.class);
+    assertSchemaHasIdTrackingProp(ingestionMetadata, "ingestion commit");
+
+    String clusteringTime = (String) writeClient.scheduleClustering(Option.empty()).get();
+    writeClient.cluster(clusteringTime, true);
+
+    metaClient = HoodieTableMetaClient.reload(metaClient);
+    HoodieInstant replaceInstant = metaClient.getActiveTimeline()
+        .getCompletedReplaceTimeline()
+        .filter(i -> i.getTimestamp().equals(clusteringTime))
+        .firstInstant()
+        .orElseThrow(() -> new AssertionError("No completed replace commit found for " + clusteringTime));
+    HoodieReplaceCommitMetadata replaceMetadata = metaClient.getActiveTimeline()
+        .deserializeInstantContent(replaceInstant, HoodieReplaceCommitMetadata.class);
+    assertSchemaHasIdTrackingProp(replaceMetadata, "replace (clustering) commit");
+  }
+
+  private static void assertSchemaHasIdTrackingProp(HoodieCommitMetadata commitMetadata, String label) {
+    String schemaStr = commitMetadata.getMetadata(HoodieCommitMetadata.SCHEMA_KEY);
+    assertNotNull(schemaStr, label + " must persist a schema under SCHEMA_KEY");
+    assertFalse(schemaStr.isEmpty(), label + " schema must not be empty");
+    Schema storedSchema = new Schema.Parser().parse(schemaStr);
+    assertEquals("{\"foo\":1}", storedSchema.getObjectProp("hudi_id_tracking"),
+        label + " must preserve schema-level prop hudi_id_tracking. Stored schema: " + schemaStr);
+  }
+
   private static void assertSchemaHasNoMetaFields(HoodieCommitMetadata commitMetadata, String label) {
     String schemaStr = commitMetadata.getMetadata(HoodieCommitMetadata.SCHEMA_KEY);
     assertNotNull(schemaStr, label + " must persist a schema under SCHEMA_KEY");

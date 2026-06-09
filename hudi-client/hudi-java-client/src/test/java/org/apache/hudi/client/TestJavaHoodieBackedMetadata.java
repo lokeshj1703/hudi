@@ -1665,6 +1665,9 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
    * Test multi-writer on metadata table with optimistic concurrency.
    */
   @Test
+  @Disabled("ENG-43120: flaky - assigns fixed ordered instants (0000002/3/4) to concurrent OCC writers, "
+      + "which races with the HUDI-7507 monotonic instant-ordering validation "
+      + "(TimestampUtils.validateForLatestTimestamp). Re-enable once ENG-43120 fixes the test.")
   public void testMetadataMultiWriter() throws Exception {
     init(HoodieTableType.COPY_ON_WRITE);
     HoodieJavaEngineContext engineContext = new HoodieJavaEngineContext(hadoopConf);

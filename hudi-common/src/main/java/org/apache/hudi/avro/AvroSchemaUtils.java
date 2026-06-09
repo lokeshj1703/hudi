@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiFunction;
@@ -213,6 +214,13 @@ public class AvroSchemaUtils {
     fields.addAll(newFields);
 
     Schema newSchema = Schema.createRecord(schema.getName(), schema.getDoc(), schema.getNamespace(), schema.isError());
+    // Preserve schema-level object props (e.g. Onehouse "hudi_id_tracking" field-id history). This is reached on the
+    // TableSchemaResolver read path via appendPartitionColumns when drop_partition_columns=true, so dropping these
+    // here would silently strip the prop from getTableAvroSchema() — the same class of bug PR #1930 fixed in
+    // HoodieAvroUtils.removeFields.
+    for (Map.Entry<String, Object> prop : schema.getObjectProps().entrySet()) {
+      newSchema.addProp(prop.getKey(), prop.getValue());
+    }
     newSchema.setFields(fields);
     return newSchema;
   }
