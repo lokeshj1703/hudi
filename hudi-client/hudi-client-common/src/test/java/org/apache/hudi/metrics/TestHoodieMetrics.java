@@ -46,6 +46,7 @@ import java.util.stream.Stream;
 import static org.apache.hudi.common.testutils.HoodieTestUtils.INSTANT_GENERATOR;
 import static org.apache.hudi.metrics.HoodieMetrics.SOURCE_READ_AND_INDEX_ACTION;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -310,6 +311,40 @@ public class TestHoodieMetrics {
 
     metricName = hoodieMetrics.getMetricsName(HoodieTimeline.COMPACTION_ACTION, HoodieMetrics.PENDING_COMPACTION_INSTANT_COUNT_STR);
     assertEquals((long)metrics.getRegistry().getGauges().get(metricName).getValue(), 6L);
+  }
+
+  @Test
+  public void testClusteringCommitMetricsEmitUnderReplaceCommitNamespace() {
+    // Completed clustering instants are always stored as replacecommit regardless of table version
+    // (v6 uses replacecommit throughout; v9 uses clustering for pending but replacecommit for completed).
+    // So updateCommitMetrics for clustering must always use REPLACE_COMMIT_ACTION.
+    Random rand = new Random();
+    long randomValue = 1 + rand.nextInt();
+
+    HoodieCommitMetadata metadata = mock(HoodieCommitMetadata.class);
+    when(metadata.fetchTotalPartitionsWritten()).thenReturn(randomValue + 1);
+    when(metadata.fetchTotalFilesInsert()).thenReturn(randomValue + 2);
+    when(metadata.fetchTotalFilesUpdated()).thenReturn(randomValue + 3);
+    when(metadata.fetchTotalRecordsWritten()).thenReturn(randomValue + 4);
+    when(metadata.fetchTotalUpdateRecordsWritten()).thenReturn(randomValue + 5);
+    when(metadata.fetchTotalInsertRecordsWritten()).thenReturn(randomValue + 6);
+    when(metadata.fetchTotalBytesWritten()).thenReturn(randomValue + 7);
+    when(metadata.getTotalScanTime()).thenReturn(randomValue + 8);
+    when(metadata.getTotalCreateTime()).thenReturn(randomValue + 9);
+    when(metadata.getTotalUpsertTime()).thenReturn(randomValue + 10);
+    when(metadata.getTotalCompactedRecordsUpdated()).thenReturn(randomValue + 11);
+    when(metadata.getTotalLogFilesCompacted()).thenReturn(randomValue + 12);
+    when(metadata.getTotalLogFilesSize()).thenReturn(randomValue + 13);
+    when(metadata.getTotalRecordsDeleted()).thenReturn(randomValue + 14);
+    when(metadata.getMinAndMaxEventTime()).thenReturn(Pair.of(Option.empty(), Option.empty()));
+
+    hoodieMetrics.updateCommitMetrics(randomValue + 17, 100L, metadata, HoodieTimeline.REPLACE_COMMIT_ACTION);
+
+    String metricName = hoodieMetrics.getMetricsName(HoodieTimeline.REPLACE_COMMIT_ACTION, HoodieMetrics.TOTAL_PARTITIONS_WRITTEN_STR);
+    assertEquals(metadata.fetchTotalPartitionsWritten(), (long) metrics.getRegistry().getGauges().get(metricName).getValue());
+    // Must not emit under "clustering.*" namespace
+    assertNull(metrics.getRegistry().getGauges().get(
+        hoodieMetrics.getMetricsName(HoodieTimeline.CLUSTERING_ACTION, HoodieMetrics.TOTAL_PARTITIONS_WRITTEN_STR)));
   }
 
   private static class MockHoodieActiveTimeline extends ActiveTimelineV2 {
