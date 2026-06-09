@@ -1302,3 +1302,8 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 
 --- [2026-06-08 06:05:22] [release-v1.246.0] ---
 [AUDIT-1071]: Changelog for release-v1.245.0 (#1923)
+
+--- [2026-06-09 01:47:15] [release-v1.247.0] ---
+[ENG-42408] [HUDI-7869] Ensure properties are copied when modifying schema (#1930)
+[AUDIT-5694]: Upgrade actions in release workflow for better JDK download reliability (#1926)
+[AUDIT-5704]: Changelog for release-v1.246.0 (#1924)
