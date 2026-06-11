@@ -3011,3 +3011,11 @@ Duplicate switch branch in HoodieInputFormatUtils (#9438)
 [AUDIT-5694]: Upgrade actions in release workflow for better JDK download reliability (#1928)
 [AUDIT-5694][CHERRYPICK] Add input records caching to HoodieGlobalSimpleIndex (#1927)
 [AUDIT-1071]: Changelog for release-v2.4.0 (#1921)
+
+--- [2026-06-11 05:10:13] [release-v2.6.0] ---
+[ENG-43184] fix(streamer): Include start commit in S3/GCS IncrSource incremental query (#1943)
+[ENG-42975] perf: Improve global index performance for commit time ordering (#1941)
+[ENG-43101] fix(core): use correct clustering action for 0.x vs 1.x in BaseHoodieTableServiceClient (#1936)
+[ENG-42408] [INTERNAL] preserve schema-level props in HoodieAvroUtils.generateProjectionSchema (#1932)
+[ENG-41958] fix(utilities): Re-inject _corrupt_record in ErrorTableAwareChainedTransformer after each transformer (#1920)
+[AUDIT-5694]: Changelog for release-v2.5.0 (#1929)
