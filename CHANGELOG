@@ -1311,3 +1311,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 --- [2026-06-10 17:05:03] [release-v1.248.0] ---
 [ENG-41644][CHERRYPICK] Narrow scheme-only reject so S3 keys ending in ':' pass (#1885)
 [AUDIT-1071]: Changelog for release-v1.247.0 (#1934)
+
+--- [2026-06-12 16:59:52] [release-v1.249.0] ---
+[ENG-43131][CHERRYPICK] Add TimelineInspector standalone Java tool for timeline forensics (#1938)
+[AUDIT-1071]: Changelog for release-v1.248.0 (#1945)
