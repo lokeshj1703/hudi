@@ -1318,3 +1318,7 @@ f5824e51ca7 [ENG-28779][INTERNAL] Add parallelism configs to AwsGlueSync (#1428)
 
 --- [2026-06-15 06:05:52] [release-v1.250.0] ---
 [AUDIT-1071]: Changelog for release-v1.249.0 (#1949)
+
+--- [2026-06-16 17:42:52] [release-v1.251.0] ---
+[ENG-38146] fix: Fix dangling lock from storage based lock (#1802)
+[AUDIT-5737]: Changelog for release-v1.250.0 (#1951)
