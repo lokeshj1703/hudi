@@ -190,10 +190,11 @@ public class S3StorageLockClient implements StorageLockClient {
     if (status == PRECONDITION_FAILURE_ERROR_CODE) {
       logger.warn("OwnerId: {}, Lockfile modified by another process: {}", ownerId, lockFilePath);
       return LockUpsertResult.ACQUIRED_BY_OTHERS;
-    } else if (status == CONDITIONAL_REQUEST_CONFLICT_ERROR_CODE) {
-      logger.warn("OwnerId: {}, Retriable conditional request conflict error: {}", ownerId, lockFilePath);
     } else if (status == RATE_LIMIT_ERROR_CODE) {
       logger.warn("OwnerId: {}, Rate limit exceeded for: {}", ownerId, lockFilePath);
+      return LockUpsertResult.THROTTLED;
+    } else if (status == CONDITIONAL_REQUEST_CONFLICT_ERROR_CODE) {
+      logger.warn("OwnerId: {}, Retriable conditional request conflict error: {}", ownerId, lockFilePath);
     } else if (status >= INTERNAL_SERVER_ERROR_CODE_MIN) {
       logger.warn("OwnerId: {}, internal server error for: {}", ownerId, lockFilePath, e);
     } else {

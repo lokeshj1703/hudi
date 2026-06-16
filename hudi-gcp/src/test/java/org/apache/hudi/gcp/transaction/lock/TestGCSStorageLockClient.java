@@ -187,7 +187,7 @@ public class TestGCSStorageLockClient {
 
     Pair<LockUpsertResult, Option<StorageLockFile>> result = lockService.tryUpsertLockFile(lockData, Option.empty());
 
-    assertEquals(LockUpsertResult.UNKNOWN_ERROR, result.getLeft());
+    assertEquals(LockUpsertResult.THROTTLED, result.getLeft());
     assertFalse(result.getRight().isPresent(), "Should return empty when a 429 occurs");
     verify(mockLogger).warn(contains("Rate limit exceeded"), eq(OWNER_ID), eq(LOCK_FILE_PATH));
   }

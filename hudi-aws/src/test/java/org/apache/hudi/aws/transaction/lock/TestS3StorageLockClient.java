@@ -49,6 +49,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.Properties;
 
+import static org.apache.hudi.client.transaction.lock.models.LockUpsertResult.THROTTLED;
 import static org.apache.hudi.client.transaction.lock.models.LockUpsertResult.UNKNOWN_ERROR;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -223,7 +224,7 @@ class TestS3StorageLockClient {
     Pair<LockUpsertResult, Option<StorageLockFile>> result =
             lockService.tryUpsertLockFile(lockData, Option.empty());
 
-    assertEquals(UNKNOWN_ERROR, result.getLeft());
+    assertEquals(THROTTLED, result.getLeft());
     assertFalse(result.getRight().isPresent());
     verify(mockLogger).warn(contains("Rate limit exceeded"), eq(OWNER_ID), eq(LOCK_FILE_PATH));
   }

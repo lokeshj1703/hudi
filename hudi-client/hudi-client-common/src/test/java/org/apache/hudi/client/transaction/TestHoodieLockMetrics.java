@@ -249,6 +249,40 @@ public class TestHoodieLockMetrics {
   }
 
   @Test
+  public void testLockThrottledMetric() {
+    HoodieMetricsConfig metricsConfig = HoodieMetricsConfig.newBuilder().withPath("/test")
+        .withReporterType(MetricsReporterType.INMEMORY.name()).withLockingMetrics(true).build();
+    HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder()
+        .forTable("testTable").withPath("/test/path")
+        .withMetricsConfig(metricsConfig)
+        .build();
+    HoodieLockMetrics lockMetrics = new HoodieLockMetrics(writeConfig);
+
+    // Get the metrics registry to verify counter values
+    Metrics metrics = Metrics.getInstance(metricsConfig);
+    MetricRegistry registry = metrics.getRegistry();
+    String metricName = writeConfig.getMetricReporterMetricsNamePrefix() + "." + HoodieLockMetrics.LOCK_THROTTLED;
+
+    // Test that the throttled metric can be called
+    assertDoesNotThrow(lockMetrics::updateLockThrottledMetric,
+        "updateLockThrottledMetric should not throw");
+
+    // Verify the counter exists and increments
+    Counter throttledCounter = registry.getCounters().get(metricName);
+    assertNotNull(throttledCounter, "Lock throttled counter should exist");
+
+    long initialCount = throttledCounter.getCount();
+
+    // Call the metric multiple times
+    lockMetrics.updateLockThrottledMetric();
+    lockMetrics.updateLockThrottledMetric();
+
+    // Verify the counter incremented
+    assertEquals(initialCount + 2, throttledCounter.getCount(),
+        "Lock throttled counter should increment by 2");
+  }
+
+  @Test
   public void testNewMetricsWithDisabledLocking() {
     // Test that the new metrics methods work safely when locking metrics are disabled
     HoodieMetricsConfig metricsConfig = HoodieMetricsConfig.newBuilder().withPath("/test")
@@ -267,6 +301,8 @@ public class TestHoodieLockMetrics {
         "updateLockDanglingMetric should not throw when locking metrics disabled");
     assertDoesNotThrow(lockMetrics::updateLockReleaseSuccessMetric,
         "updateLockReleaseSuccessMetric should not throw when locking metrics disabled");
+    assertDoesNotThrow(lockMetrics::updateLockThrottledMetric,
+        "updateLockThrottledMetric should not throw when locking metrics disabled");
   }
 
   @Test

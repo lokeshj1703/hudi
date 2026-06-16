@@ -49,6 +49,7 @@ public class HoodieLockMetrics {
   public static final String LOCK_EXPIRATION_DEADLINE = "lock_expiration_deadline";
   public static final String LOCK_DANGLING = "lock_dangling";
   public static final String LOCK_INTERRUPTED = "lock_interrupted";
+  public static final String LOCK_THROTTLED = "lock.throttled";
   private final HoodieWriteConfig writeConfig;
   private final boolean isMetricsEnabled;
   private final int keepLastNtimes = 100;
@@ -65,6 +66,7 @@ public class HoodieLockMetrics {
   private transient Counter lockReleaseSuccess;
   private transient Counter lockDangling;
   private transient Counter lockInterrupted;
+  private transient Counter lockThrottled;
   private transient Timer lockDuration;
   private transient Timer lockApiRequestDuration;
   private static final Object REGISTRY_LOCK = new Object();
@@ -89,6 +91,7 @@ public class HoodieLockMetrics {
       lockReleaseSuccess = registry.counter(getMetricsName(LOCK_RELEASE_SUCCESS_COUNTER_NAME));
       lockDangling = registry.counter(getMetricsName(LOCK_DANGLING));
       lockInterrupted = registry.counter(getMetricsName(LOCK_INTERRUPTED));
+      lockThrottled = registry.counter(getMetricsName(LOCK_THROTTLED));
       lockDuration = createTimerForMetrics(registry, LOCK_ACQUIRE_DURATION_TIMER_NAME);
       lockApiRequestDuration = createTimerForMetrics(registry, LOCK_REQUEST_LATENCY_TIMER_NAME);
     }
@@ -206,6 +209,12 @@ public class HoodieLockMetrics {
   public void updateLockInterruptedMetric() {
     if (isMetricsEnabled) {
       this.lockInterrupted.inc();
+    }
+  }
+
+  public void updateLockThrottledMetric() {
+    if (isMetricsEnabled) {
+      this.lockThrottled.inc();
     }
   }
 }
