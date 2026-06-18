@@ -257,6 +257,66 @@ public class TestAvroSchemaEvolutionUtils {
     Assertions.assertEquals(schema, AvroInternalSchemaConverter.fixNullOrdering(schema));
   }
 
+  @Test
+  public void testReconcileSchemaTimestampPrecisionEvolution() {
+    // Strict by default: changing a column's logical type between timestamp-millis and timestamp-micros throws.
+    // Opt-in via the allowTimestampPrecisionEvolution=true overload permits the precision change.
+    Schema tableSchemaMicros = create("trip",
+        new Schema.Field("id", Schema.create(Schema.Type.STRING), null, null),
+        new Schema.Field("ts", LogicalTypes.timestampMicros().addToSchema(Schema.create(Schema.Type.LONG)), null, null));
+    Schema incomingSchemaMillis = create("trip",
+        new Schema.Field("id", Schema.create(Schema.Type.STRING), null, null),
+        new Schema.Field("ts", LogicalTypes.timestampMillis().addToSchema(Schema.create(Schema.Type.LONG)), null, null));
+
+    // Default strict behavior rejects the precision change in either direction.
+    Throwable rejectedMicrosToMillis = assertThrows(Exception.class,
+        () -> AvroSchemaEvolutionUtils.reconcileSchema(incomingSchemaMillis, tableSchemaMicros, false, false));
+    assertTrue(rejectedMicrosToMillis.getMessage().contains("incompatible type"));
+    Throwable rejectedMillisToMicros = assertThrows(Exception.class,
+        () -> AvroSchemaEvolutionUtils.reconcileSchema(tableSchemaMicros, incomingSchemaMillis, false, false));
+    assertTrue(rejectedMillisToMicros.getMessage().contains("incompatible type"));
+
+    // With the gate opened, both directions succeed and produce a schema labeled with the incoming precision.
+    Schema reconciledToMillis = AvroSchemaEvolutionUtils.reconcileSchema(
+        incomingSchemaMillis, tableSchemaMicros, false, true);
+    Assertions.assertEquals("timestamp-millis", reconciledToMillis.getField("ts").schema().getLogicalType().getName());
+
+    Schema reconciledToMicros = AvroSchemaEvolutionUtils.reconcileSchema(
+        tableSchemaMicros, incomingSchemaMillis, false, true);
+    Assertions.assertEquals("timestamp-micros", reconciledToMicros.getField("ts").schema().getLogicalType().getName());
+
+    // The same gate applies to the local-timestamp variants.
+    Schema tableLocalMicros = create("trip",
+        new Schema.Field("id", Schema.create(Schema.Type.STRING), null, null),
+        new Schema.Field("ts", LogicalTypes.localTimestampMicros().addToSchema(Schema.create(Schema.Type.LONG)), null, null));
+    Schema incomingLocalMillis = create("trip",
+        new Schema.Field("id", Schema.create(Schema.Type.STRING), null, null),
+        new Schema.Field("ts", LogicalTypes.localTimestampMillis().addToSchema(Schema.create(Schema.Type.LONG)), null, null));
+    assertThrows(Exception.class,
+        () -> AvroSchemaEvolutionUtils.reconcileSchema(incomingLocalMillis, tableLocalMicros, false, false));
+    Schema reconciledLocal = AvroSchemaEvolutionUtils.reconcileSchema(
+        incomingLocalMillis, tableLocalMicros, false, true);
+    Assertions.assertEquals("local-timestamp-millis", reconciledLocal.getField("ts").schema().getLogicalType().getName());
+
+    // 0.x did not recognize the local-timestamp logical types, so affected tables persisted those
+    // columns as bare long. The gate must also allow attaching the logical type on forward-fix.
+    Schema tableBareLong = create("trip",
+        new Schema.Field("id", Schema.create(Schema.Type.STRING), null, null),
+        new Schema.Field("ts", Schema.create(Schema.Type.LONG), null, null));
+    assertThrows(Exception.class,
+        () -> AvroSchemaEvolutionUtils.reconcileSchema(incomingLocalMillis, tableBareLong, false, false));
+    Schema repairedToLocalMillis = AvroSchemaEvolutionUtils.reconcileSchema(
+        incomingLocalMillis, tableBareLong, false, true);
+    Assertions.assertEquals("local-timestamp-millis", repairedToLocalMillis.getField("ts").schema().getLogicalType().getName());
+
+    Schema incomingLocalMicros = create("trip",
+        new Schema.Field("id", Schema.create(Schema.Type.STRING), null, null),
+        new Schema.Field("ts", LogicalTypes.localTimestampMicros().addToSchema(Schema.create(Schema.Type.LONG)), null, null));
+    Schema repairedToLocalMicros = AvroSchemaEvolutionUtils.reconcileSchema(
+        incomingLocalMicros, tableBareLong, false, true);
+    Assertions.assertEquals("local-timestamp-micros", repairedToLocalMicros.getField("ts").schema().getLogicalType().getName());
+  }
+
   public enum Enum {
     ENUM1, ENUM2
   }
@@ -480,7 +540,7 @@ public class TestAvroSchemaEvolutionUtils {
     );
     evolvedRecord = (Types.RecordType)InternalSchemaBuilder.getBuilder().refreshNewId(evolvedRecord, new AtomicInteger(0));
     Schema evolvedAvroSchema = AvroInternalSchemaConverter.convert(evolvedRecord, "test1");
-    InternalSchema result = AvroSchemaEvolutionUtils.reconcileSchema(evolvedAvroSchema, oldSchema, false);
+    InternalSchema result = AvroSchemaEvolutionUtils.reconcileSchema(evolvedAvroSchema, oldSchema, false, false);
     Types.RecordType checkedRecord = Types.RecordType.get(
         Types.Field.get(0, false, "id", Types.IntType.get()),
         Types.Field.get(1, true, "data", Types.StringType.get()),
@@ -535,7 +595,7 @@ public class TestAvroSchemaEvolutionUtils {
         + "{\"name\":\"d2\",\"type\":[\"null\",{\"type\":\"int\",\"logicalType\":\"date\"}],\"default\":null}]}");
 
     Schema simpleReconcileSchema = AvroInternalSchemaConverter.convert(AvroSchemaEvolutionUtils
-        .reconcileSchema(incomingSchema, AvroInternalSchemaConverter.convert(schema), false), "schemaNameFallback");
+        .reconcileSchema(incomingSchema, AvroInternalSchemaConverter.convert(schema), false, false), "schemaNameFallback");
     Assertions.assertEquals(simpleCheckSchema, simpleReconcileSchema);
   }
 
@@ -557,7 +617,7 @@ public class TestAvroSchemaEvolutionUtils {
     InternalSchema oldInternalSchema = AvroInternalSchemaConverter.convert(oldSchema);
     // set a non-default schema id for old table schema, e.g., 2.
     oldInternalSchema.setSchemaId(2);
-    InternalSchema evolvedSchema = AvroSchemaEvolutionUtils.reconcileSchema(incomingSchema, oldInternalSchema, false);
+    InternalSchema evolvedSchema = AvroSchemaEvolutionUtils.reconcileSchema(incomingSchema, oldInternalSchema, false, false);
     // the evolved schema should be the old table schema, since there is no type change at all.
     Assertions.assertEquals(oldInternalSchema, evolvedSchema);
   }

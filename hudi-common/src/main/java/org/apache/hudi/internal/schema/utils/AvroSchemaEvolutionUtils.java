@@ -63,7 +63,8 @@ public class AvroSchemaEvolutionUtils {
    *                                  nullable in the result. Otherwise, no updates will be made to those fields.
    * @return reconcile Schema
    */
-  public static InternalSchema reconcileSchema(Schema incomingSchema, InternalSchema oldTableSchema, boolean makeMissingFieldsNullable) {
+  public static InternalSchema reconcileSchema(Schema incomingSchema, InternalSchema oldTableSchema,
+      boolean makeMissingFieldsNullable, boolean allowTimestampPrecisionEvolution) {
     /* If incoming schema is null, we fall back on table schema. */
     if (incomingSchema.getType() == Schema.Type.NULL) {
       return oldTableSchema;
@@ -118,7 +119,9 @@ public class AvroSchemaEvolutionUtils {
 
     // do type evolution.
     InternalSchema internalSchemaAfterAddColumns = SchemaChangeUtils.applyTableChanges2Schema(oldTableSchema, addChange);
-    TableChanges.ColumnUpdateChange typeChange = TableChanges.ColumnUpdateChange.get(internalSchemaAfterAddColumns);
+    TableChanges.ColumnUpdateChange typeChange = TableChanges.ColumnUpdateChange.get(
+        internalSchemaAfterAddColumns, false, allowTimestampPrecisionEvolution);
+
     typeChangeColumns.stream().filter(f -> !inComingInternalSchema.findType(f).isNestedType()).forEach(col -> {
       typeChange.updateColumnType(col, inComingInternalSchema.findType(col));
     });
@@ -148,8 +151,10 @@ public class AvroSchemaEvolutionUtils {
     return evolvedSchema;
   }
 
-  public static Schema reconcileSchema(Schema incomingSchema, Schema oldTableSchema, boolean makeMissingFieldsNullable) {
-    return convert(reconcileSchema(incomingSchema, convert(oldTableSchema), makeMissingFieldsNullable), oldTableSchema.getFullName());
+  public static Schema reconcileSchema(Schema incomingSchema, Schema oldTableSchema, boolean makeMissingFieldsNullable,
+                                       boolean allowTimestampPrecisionEvolution) {
+    return convert(reconcileSchema(incomingSchema, convert(oldTableSchema), makeMissingFieldsNullable, allowTimestampPrecisionEvolution),
+        oldTableSchema.getFullName());
   }
 
   /**
